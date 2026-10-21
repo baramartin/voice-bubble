@@ -14,6 +14,8 @@
 
 ---
 
+A free, open-source **voice typing** (speech-to-text) and **text-to-speech** tool, powered by Google Gemini or OpenAI.
+
 Press a hotkey, talk, press it again, and the transcript is pasted into whatever window you were using. By default **Smart mode** tidies up what you said on the way: the ums disappear, "Tuesday, no, Wednesday" becomes "Wednesday", and spoken lists become real lists. Other styles turn your words into bullet points or an email. Select text anywhere and press another hotkey to hear it spoken.
 
 It runs on your own API keys (Google Gemini and/or OpenAI), so you pay per minute of audio. A typical dictation costs a fraction of a cent, Gemini has a free tier, and there's no subscription.
@@ -52,8 +54,9 @@ The setup wizard walks you through these steps (arrow keys to move, Enter to sel
 4. **Read-aloud engine**, with prices
 5. **Voice**: press `P` to hear the highlighted voice before you pick it
 6. **Custom vocabulary** (Gemini only): names or jargon it should recognize
-7. **Installing dependencies** (`pip` + `npm`)
-8. **Shortcuts** (Windows): a desktop shortcut and, if you like, starting with Windows
+7. **Hotkeys**: keep the defaults or pick your own
+8. **Installing dependencies** (`pip` + `npm`)
+9. **Shortcuts** (Windows): a desktop shortcut and, if you like, starting with Windows
 
 It writes a `.env` file. Run it again anytime to change your choices; your current values are kept as defaults. Everything except the API keys can also be changed later in the bubble's settings.
 
@@ -62,12 +65,12 @@ It writes a `.env` file. Run it again anytime to change your choices; your curre
 | Action | How |
 |---|---|
 | Start / stop dictation | `Ctrl+Shift+Space` or click the mic |
-| Read selected text aloud | `Ctrl+Shift+S` (copies the selection, then speaks it; press again to stop) |
+| Read selected text aloud | `Ctrl+Alt+Shift+Space` (the same plus Alt). Press again to stop. Your clipboard is left as it was |
 | Read the clipboard aloud | Click the speaker button |
 | Change style, engine, mic or voice | Click the settings button on the bubble (the Help tab lists all of this too) |
 | Hear a voice | Click it in Settings → Read aloud |
 
-The hotkeys are global, so they take over these combinations in every app (for example, `Ctrl+Shift+S` is "Save As" in many editors). If another app already owns one of them, the bubble tells you on startup.
+The hotkeys are global, so they work in every app and take over those combinations everywhere. If another app already owns one of them, the bubble tells you on startup; pick different ones with `npm run setup` (or `HOTKEY_DICTATE` / `HOTKEY_READ_ALOUD` in `.env`).
 
 ## Pricing
 
@@ -98,6 +101,8 @@ The wizard handles this, but you can also edit `.env` by hand (see [`.env.exampl
 | `GEMINI_TTS_MODEL` | `gemini-3.8-flash-lite-tts` | Or `gemini-3.8-flash-tts` |
 | `GEMINI_TRANSCRIBE_VOCABULARY` | (none) | Comma-separated names or jargon, e.g. `Kubernetes, BigQuery` |
 | `GEMINI_TEXT_MODEL` | `gemini-3.5-flash-lite` | Output styles when you have no OpenAI key |
+| `HOTKEY_DICTATE` | `Ctrl+Shift+Space` | Global dictation hotkey ([Electron accelerator](https://www.electronjs.org/docs/latest/api/accelerator) format) |
+| `HOTKEY_READ_ALOUD` | `Ctrl+Alt+Shift+Space` | Global read-aloud hotkey |
 
 Choices you make in the bubble's settings are remembered and take precedence over these defaults.
 
@@ -108,7 +113,7 @@ Everything except pasting into other apps is cross-platform. Pasting works like 
 - **macOS (experimental):** the bubble is a floating panel that doesn't take focus, and pasting sends ⌘V through `osascript`. macOS will ask you to allow **Accessibility** access (System Settings → Privacy & Security → Accessibility) for the app or terminal you start Voice Bubble from.
 - **Linux (experimental):** on X11, install `xdotool` for automatic pasting. Without it (for example on Wayland), the text is copied and the bubble shows *Copied, paste it*.
 
-The hotkeys stay `Ctrl+Shift+Space` and `Ctrl+Shift+S` on every platform. If you try it on a Mac or Linux, issues and fixes are very welcome.
+The hotkeys are the same on every platform (`Ctrl` is the Control key on a Mac, `Alt` is Option). If you try it on a Mac or Linux, issues and fixes are very welcome.
 
 ## How it works
 

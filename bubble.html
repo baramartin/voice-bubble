@@ -489,7 +489,7 @@
       <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.61 3.61 0 0112 15.6z"/></svg>
       <div class="style-badge" id="style-badge"></div>
     </button>
-    <button class="speak-btn" id="speak-btn" title="Speak clipboard (Ctrl+Shift+S)">
+    <button class="speak-btn" id="speak-btn" title="Read the clipboard aloud">
       <svg class="speak-icon" id="speak-icon-svg" viewBox="0 0 24 24">
         <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
       </svg>
@@ -497,7 +497,7 @@
         <rect x="6" y="6" width="12" height="12" rx="1"/>
       </svg>
     </button>
-    <button class="mic-btn idle" id="mic-btn" title="Click to record (Ctrl+Shift+Space)">
+    <button class="mic-btn idle" id="mic-btn" title="Click to record">
       <svg class="mic-icon" id="mic-icon-svg" viewBox="0 0 24 24">
         <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/>
         <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
@@ -832,8 +832,9 @@ function renderSpeechTab(body) {
 
 function renderHelpTab(body) {
   const items = [
-    ['Dictate', '<kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Space</kbd> or click the mic. Press again to stop; the text is pasted into the window you were using.'],
-    ['Read aloud', 'Select text anywhere and press <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd>. Press it again to stop. The speaker button reads the clipboard.'],
+    ['Dictate', `${kbd(hotkeys.dictate)} or click the mic. Press again to stop; the text is pasted into the window you were using.`],
+    ['Read aloud', `Select text anywhere and press ${kbd(hotkeys.readAloud)}. Press it again to stop. Your clipboard is left as it was. The speaker button reads the clipboard.`],
+    ['Change the hotkeys', 'Run <kbd>npm run setup</kbd> again, or set HOTKEY_DICTATE / HOTKEY_READ_ALOUD in .env, then restart.'],
     ['Styles', 'Smart mode (the default) tidies up what you said. Other styles reformat or rewrite it, and Raw pastes it word for word. A dot on the settings button means your words will be rewritten or reformatted (any style except Smart mode and Raw). Hover the button to see the current style.'],
     ['Move the bubble', 'Drag it by its dark background.'],
     ['API keys', 'To add or change keys, run <kbd>npm run setup</kbd> in the app folder and restart.'],
@@ -1377,7 +1378,7 @@ speakBtn.addEventListener('click', async (e) => {
 // Listen for global hotkey toggle from main process
 window.electronAPI.onToggleRecording(() => toggle());
 
-// Listen for speak-clipboard from main process (Ctrl+Shift+S)
+// Listen for speak-clipboard from main process (read-aloud hotkey)
 window.electronAPI.onSpeakClipboard((text) => {
   if (isSpeaking || isLoadingTTS) {
     stopSpeaking();
@@ -1431,9 +1432,19 @@ function updateStyleBadge() {
   settingsBtn.title = `Settings (style: ${style ? style.label : 'Raw'})`;
 }
 
-// Another app may already own one of our global hotkeys; say so instead of failing silently
-async function showHotkeyConflicts() {
-  const taken = await window.electronAPI.getHotkeyConflicts();
+// Hotkeys as configured in .env (defaults until main answers)
+let hotkeys = { dictate: 'Ctrl+Shift+Space', readAloud: 'Ctrl+Alt+Shift+Space', failed: [] };
+
+function kbd(accelerator) {
+  return accelerator.split('+').map(key => `<kbd>${key}</kbd>`).join(' ');
+}
+
+// Show the hotkeys in the tooltips, and warn if another app already owns one instead of failing silently
+async function loadHotkeys() {
+  hotkeys = await window.electronAPI.getHotkeys();
+  micBtn.title = `Click to record (${hotkeys.dictate})`;
+  speakBtn.title = `Read the clipboard aloud (select text and press ${hotkeys.readAloud} to read a selection)`;
+  const taken = hotkeys.failed;
   if (!taken.length) return;
   infoLabel.textContent = 'Hotkey in use'; // by another app; longer labels get cut off
   infoValue.title = 'Another app already uses this shortcut, so Voice Bubble could not register it.';
@@ -1446,7 +1457,7 @@ async function showHotkeyConflicts() {
 updateStyleBadge();
 enumerateMics();
 loadConfig();
-showHotkeyConflicts();
+loadHotkeys();
 </script>
 </body>
 </html>

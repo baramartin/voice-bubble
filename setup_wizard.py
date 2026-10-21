@@ -64,6 +64,22 @@ STYLES = [
 ]
 
 KEY_PREFIXES = {'gemini': 'AIza', 'openai': 'sk-'}
+
+# Global hotkeys, in Electron accelerator format. Keep defaults in sync with main.js.
+# Read aloud is the dictation hotkey plus Alt: hardly any app uses it, on any OS.
+DEFAULT_HOTKEYS = {
+    'HOTKEY_DICTATE': 'Ctrl+Shift+Space',
+    'HOTKEY_READ_ALOUD': 'Ctrl+Alt+Shift+Space',
+}
+HOTKEY_MODIFIERS = {'ctrl', 'control', 'alt', 'option', 'shift', 'cmd', 'command', 'cmdorctrl',
+                    'commandorcontrol', 'super', 'meta', 'altgr'}
+# Combinations that other apps commonly use, worth a warning
+BUSY_HOTKEYS = {
+    'ctrl+shift+s': '"Save As" in many apps', 'ctrl+shift+r': 'hard refresh in browsers',
+    'ctrl+shift+t': 'reopen closed tab in browsers', 'ctrl+shift+n': 'new incognito window in browsers',
+    'ctrl+shift+p': 'command palette in VS Code', 'ctrl+shift+c': 'copy in terminals',
+    'ctrl+shift+v': 'paste in terminals', 'ctrl+shift+esc': 'Task Manager',
+}
 CHANGE_LATER = "You can change this anytime in the bubble's settings."
 
 # ---- Console helpers ----
@@ -72,7 +88,7 @@ os.system('')  # enables ANSI colors in older Windows consoles
 BOLD, DIM, GREEN, YELLOW, RED, CYAN, RESET = '\033[1m', '\033[2m', '\033[32m', '\033[33m', '\033[31m', '\033[36m', '\033[0m'
 # Arrow-key menus need a real terminal; piped input falls back to numbered menus
 INTERACTIVE = sys.stdin.isatty() and sys.stdout.isatty()
-STEPS = ['Keys', 'Dictation', 'Style', 'Read aloud', 'Voice', 'Vocabulary', 'Finish']
+STEPS = ['Keys', 'Dictation', 'Style', 'Read aloud', 'Voice', 'Vocabulary', 'Hotkeys', 'Finish']
 
 def screen(step):
     """Clear the terminal and show the title plus a breadcrumb of the steps."""
@@ -435,6 +451,50 @@ def step_vocabulary(env, stt):
         return None
     return entered or current or None
 
+def hotkey_problem(hotkey):
+    """Returns why a hotkey can't be used, or None. Needs at least one modifier plus one key."""
+    parts = [p.strip() for p in hotkey.split('+')]
+    if any(not p for p in parts):
+        return 'it has an empty part; write it like Ctrl+Alt+R'
+    if parts[-1].lower() in HOTKEY_MODIFIERS:
+        return 'it needs a key after the modifiers, like Space or a letter'
+    if not any(p.lower() in HOTKEY_MODIFIERS for p in parts[:-1]) or len(parts) < 2:
+        return 'it needs at least one of Ctrl, Alt or Shift, so it does not fire while you type'
+    return None
+
+def ask_hotkey(label, current):
+    while True:
+        entered = input(f'{label} (Enter keeps {current}): ').strip()
+        if not entered:
+            return current
+        # Normalize "ctrl + alt + space" to "Ctrl+Alt+Space" (Electron's accelerator format)
+        entered = '+'.join(p.strip()[:1].upper() + p.strip()[1:] for p in entered.split('+'))
+        problem = hotkey_problem(entered)
+        if problem:
+            print(f'  {RED}That will not work: {problem}.{RESET}')
+            continue
+        busy = BUSY_HOTKEYS.get(entered.lower().replace(' ', ''))
+        if busy and not ask_yes_no(f'{entered} is {busy}. Use it anyway?', default=False):
+            continue
+        return entered
+
+def step_hotkeys(env):
+    screen('Hotkeys')
+    current = {name: env.get(name) or default for name, default in DEFAULT_HOTKEYS.items()}
+    print('These work in every app, so they should be combinations other apps don\'t use.\n')
+    print(f'  Dictate:     {BOLD}{current["HOTKEY_DICTATE"]}{RESET}')
+    print(f'  Read aloud:  {BOLD}{current["HOTKEY_READ_ALOUD"]}{RESET}\n')
+    if choose('Hotkeys', ['Keep these', 'Change them'], 0) == 0:
+        return current
+    print(f'\n{DIM}Write them like Ctrl+Alt+R or Ctrl+Shift+F9. Modifiers: Ctrl, Alt, Shift'
+          f'{", Cmd" if sys.platform == "darwin" else ""}.{RESET}')
+    while True:
+        dictate = ask_hotkey('Dictate', current['HOTKEY_DICTATE'])
+        read_aloud = ask_hotkey('Read aloud', current['HOTKEY_READ_ALOUD'])
+        if dictate.lower() != read_aloud.lower():
+            return {'HOTKEY_DICTATE': dictate, 'HOTKEY_READ_ALOUD': read_aloud}
+        print(f'  {RED}The two hotkeys need to be different.{RESET}')
+
 def step_install():
     commands = [([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'], 'Python packages'),
                 (['npm', 'install'], 'Electron')]
@@ -507,8 +567,10 @@ def main():
     tts = step_tts(env, keys)
     voice = step_voice(env, keys, tts)
     vocabulary = step_vocabulary(env, stt)
+    hotkeys = step_hotkeys(env)
 
     updates = {
+        **hotkeys,
         'GEMINI_API_KEY': keys.get('gemini'),
         'OPENAI_API_KEY': keys.get('openai'),
         'DEFAULT_STT_ENGINE': stt[0],
@@ -525,13 +587,14 @@ def main():
     ok(f'Saved your settings to {ENV_PATH}')
     print(f'   Dictation:  {stt[2]}, style {style[1]}')
     print(f'   Read-aloud: {tts[2]}, voice {voice}')
+    print(f'   Hotkeys:    {hotkeys["HOTKEY_DICTATE"]} to dictate, {hotkeys["HOTKEY_READ_ALOUD"]} to read aloud')
     print(f"{DIM}   You can switch engines and voices anytime in the bubble's settings.{RESET}\n")
 
     step_install()
     step_shortcuts()
     start_hint = 'the desktop shortcut or ' if os.name == 'nt' else ''
     print(f'\n{BOLD}Done!{RESET} Start Voice Bubble with {start_hint}{CYAN}npm start{RESET}')
-    print('Hotkeys: Ctrl+Shift+Space to dictate, Ctrl+Shift+S to read the selection aloud.')
+    print('If it is already running, quit it from the tray icon and start it again to apply the changes.')
 
 if __name__ == '__main__':
     try:

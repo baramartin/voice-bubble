@@ -9,6 +9,25 @@ const IS_MAC = process.platform === 'darwin';
 const HAS_XDOTOOL = !IS_WINDOWS && !IS_MAC && commandExists('xdotool');
 const PYTHON = IS_WINDOWS ? 'python' : 'python3';
 
+// Hotkeys come from .env (HOTKEY_DICTATE / HOTKEY_READ_ALOUD, set by the setup wizard).
+// Read aloud defaults to the dictation hotkey plus Alt: hardly any app uses it, on any OS.
+const env = readEnvFile(path.join(__dirname, '.env'));
+const HOTKEYS = {
+  dictate: env.HOTKEY_DICTATE || 'Ctrl+Shift+Space',
+  readAloud: env.HOTKEY_READ_ALOUD || 'Ctrl+Alt+Shift+Space'
+};
+
+function readEnvFile(file) {
+  const values = {};
+  try {
+    for (const line of require('fs').readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (match) values[match[1]] = match[2].replace(/^["']|["']$/g, '');
+    }
+  } catch { /* no .env yet */ }
+  return values;
+}
+
 function commandExists(command) {
   try {
     execFileSync('which', [command], { stdio: 'ignore' });
@@ -213,8 +232,14 @@ app.on('second-instance', () => bubbleWindow?.show());
 // globalShortcut.register returns false when another app already owns the combination
 const failedHotkeys = [];
 function registerHotkey(accelerator, handler) {
-  if (!globalShortcut.register(accelerator, handler)) {
-    console.error(`Hotkey ${accelerator} is already used by another app`);
+  let registered = false;
+  try {
+    registered = globalShortcut.register(accelerator, handler);
+  } catch (e) {
+    console.error(`Invalid hotkey "${accelerator}":`, e.message); // e.g. a typo in .env
+  }
+  if (!registered) {
+    console.error(`Hotkey ${accelerator} could not be registered (used by another app, or invalid)`);
     failedHotkeys.push(accelerator);
   }
 }
@@ -227,25 +252,26 @@ app.whenReady().then(() => {
   // Try to create tray (won't crash if icon missing)
   try { createTray(); } catch (e) { console.log('Tray icon not found, skipping tray'); }
 
-  // Global hotkey: Ctrl+Shift+Space to toggle recording
-  registerHotkey('Ctrl+Shift+Space', async () => {
+  // Global hotkey to toggle recording (Ctrl+Shift+Space by default)
+  registerHotkey(HOTKEYS.dictate, async () => {
     await captureTargetWindow();
     bubbleWindow.webContents.send('toggle-recording');
   });
 
-  // Global hotkey: Ctrl+Shift+S to speak selection/clipboard aloud (or stop if already speaking)
-  registerHotkey('Ctrl+Shift+S', async () => {
-    // First, copy the selection from the target window (Ctrl+C / Cmd+C)
-    if (await sendShortcutToTarget('c')) {
-      // Small delay for clipboard to update
-      await new Promise(r => setTimeout(r, 100));
-    }
+  // Global hotkey to read the selection aloud, or the clipboard if nothing is selected
+  // (Ctrl+Alt+Shift+Space by default). Pressing it while speaking stops.
+  registerHotkey(HOTKEYS.readAloud, async () => {
+    // Copy the selection from the target window (Ctrl+C / Cmd+C), then put the user's clipboard back
+    const before = clipboard.readText();
+    const copied = await sendShortcutToTarget('c');
+    if (copied) await new Promise(r => setTimeout(r, 150)); // give the app time to update the clipboard
     const text = clipboard.readText();
+    if (copied && before && text !== before) clipboard.writeText(before);
     bubbleWindow.webContents.send('speak-clipboard', text || '');
   });
 
-  // IPC: hotkeys that another app already owns, so the bubble can say so
-  ipcMain.handle('get-hotkey-conflicts', () => failedHotkeys);
+  // IPC: the configured hotkeys, and any another app already owns, for the bubble's UI
+  ipcMain.handle('get-hotkeys', () => ({ ...HOTKEYS, failed: failedHotkeys }));
 
   // IPC: read clipboard text (for renderer button clicks)
   ipcMain.handle('get-clipboard-text', () => clipboard.readText());
