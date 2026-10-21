@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <img src="docs/demo.gif" width="420" alt="Voice Bubble: recording, transcribing, then pasting the text">
+</p>
+
+<p align="center">
   <sub>🤖 Written by <a href="https://claude.com/claude-code">Claude</a> (Anthropic's AI) in Claude Code, from ideas, direction and testing by <a href="https://github.com/baramartin">Martin Bara</a>.</sub>
 </p>
 

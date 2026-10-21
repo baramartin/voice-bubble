@@ -43,32 +43,85 @@ let flaskProcess;
 let targetWindowHandle = null;
 
 let captureInFlight = false;
+let foregroundWatcher = null;
+let quitting = false;
 
-const PS_GET_HWND = `
-Add-Type 'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); }'
-[WinAPI]::GetForegroundWindow().ToInt64()
+function isBubbleHandle(handle) {
+  const bubbleHandle = bubbleWindow?.getNativeWindowHandle();
+  return bubbleHandle ? handle === bufferToInt64(bubbleHandle) : false;
+}
+
+// Windows: one long-running PowerShell process reports every change of the foreground window
+// (checked every 100 ms). Starting a new PowerShell per check takes ~1.2 s, which left the
+// remembered window stale, so pastes could land in the previously used window.
+// Each line is "<handle> <window class>".
+const PS_WATCH_FOREGROUND = `
+Add-Type @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public class ForegroundWatch {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassName(IntPtr hWnd, StringBuilder name, int maxCount);
+}
+"@
+$last = 0
+$name = New-Object System.Text.StringBuilder 256
+while ($true) {
+    $hwnd = [ForegroundWatch]::GetForegroundWindow()
+    if ($hwnd.ToInt64() -ne $last) {
+        $last = $hwnd.ToInt64()
+        [void]$name.Clear()
+        [void][ForegroundWatch]::GetClassName($hwnd, $name, 256)
+        [Console]::Out.WriteLine("$last " + $name.ToString())
+        [Console]::Out.Flush()
+    }
+    Start-Sleep -Milliseconds 100
+}
 `.trim();
 
+// Taskbar, tray overflow and desktop: clicking these shouldn't become the paste target
+const SHELL_WINDOW_CLASSES = new Set([
+  'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'NotifyIconOverflowWindow',
+  'TopLevelWindowForOverflowXamlIsland', 'Progman', 'WorkerW'
+]);
+
+function startForegroundWatcher() {
+  foregroundWatcher = spawn('powershell', ['-NoProfile', '-Command', PS_WATCH_FOREGROUND], { windowsHide: true });
+  let pending = '';
+  foregroundWatcher.stdout.on('data', (data) => {
+    pending += data;
+    const lines = pending.split(/\r?\n/);
+    pending = lines.pop();
+    for (const line of lines) {
+      const [handle, ...classParts] = line.trim().split(' ');
+      const windowClass = classParts.join(' ');
+      if (handle && handle !== '0' && !isBubbleHandle(handle) && !SHELL_WINDOW_CLASSES.has(windowClass)) {
+        targetWindowHandle = handle;
+      }
+    }
+  });
+  foregroundWatcher.stderr.on('data', (d) => console.error('[foreground watcher]', String(d).trim()));
+  foregroundWatcher.on('exit', () => {
+    if (!quitting) setTimeout(startForegroundWatcher, 1000); // keep tracking if it ever dies
+  });
+}
+
 // Remember the window the user was typing in, so we can paste back into it.
-// macOS doesn't need this: the bubble is a non-activating panel, so that app never loses focus.
+// Windows: kept current by the watcher above. macOS doesn't need this: the bubble is a
+// non-activating panel, so that app never loses focus. Linux: ask xdotool.
 function captureTargetWindow() {
-  if (IS_MAC || (!IS_WINDOWS && !HAS_XDOTOOL)) return Promise.resolve(null);
+  if (IS_WINDOWS || IS_MAC || !HAS_XDOTOOL) return Promise.resolve(targetWindowHandle);
   if (captureInFlight) return Promise.resolve(targetWindowHandle);
   captureInFlight = true;
-  const [command, args] = IS_WINDOWS
-    ? ['powershell', ['-NoProfile', '-Command', PS_GET_HWND]]
-    : ['xdotool', ['getactivewindow']];
   return new Promise((resolve) => {
-    execFile(command, args, { windowsHide: true }, (err, stdout) => {
+    execFile('xdotool', ['getactivewindow'], { windowsHide: true }, (err, stdout) => {
       captureInFlight = false;
-      if (!err && stdout.trim()) {
-        const handle = stdout.trim();
-        const bubbleHandle = bubbleWindow?.getNativeWindowHandle();
-        const bubbleInt = bubbleHandle ? bufferToInt64(bubbleHandle) : null;
-        if (handle !== String(bubbleInt)) {
-          targetWindowHandle = handle;
-        }
-      }
+      const handle = stdout && stdout.trim();
+      if (!err && handle && !isBubbleHandle(handle)) targetWindowHandle = handle;
       resolve(targetWindowHandle);
     });
   });
@@ -200,13 +253,14 @@ function createBubbleWindow() {
   });
   bubbleWindow.on('focus', () => bubbleWindow.setMaximizable(false));
 
-  // Track which external window last had focus.
-  // Poll every 500ms so we always have a recent handle ready.
-  setInterval(async () => {
-    if (!bubbleWindow.isFocused()) {
-      await captureTargetWindow();
-    }
-  }, 500);
+  // Track which external window last had focus
+  if (IS_WINDOWS) {
+    startForegroundWatcher();
+  } else if (HAS_XDOTOOL) {
+    setInterval(() => {
+      if (!bubbleWindow.isFocused()) captureTargetWindow();
+    }, 500);
+  }
 }
 
 function createTray() {
@@ -310,9 +364,13 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  quitting = true;
   globalShortcut.unregisterAll();
   if (flaskProcess) {
     flaskProcess.kill();
+  }
+  if (foregroundWatcher) {
+    foregroundWatcher.kill();
   }
 });
 
