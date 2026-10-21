@@ -64,6 +64,7 @@ STYLES = [
 ]
 
 KEY_PREFIXES = {'gemini': 'AIza', 'openai': 'sk-'}
+CHANGE_LATER = "You can change this anytime in the bubble's settings."
 
 # ---- Console helpers ----
 
@@ -376,7 +377,7 @@ def engine_menu(prompt, options, default):
 
 def step_stt(env, keys):
     screen('Dictation')
-    print(f'{DIM}Approximate paid-tier prices as of {PRICES_AS_OF}.{RESET}\n')
+    print(f'{DIM}Approximate paid-tier prices as of {PRICES_AS_OF}. {CHANGE_LATER}{RESET}\n')
     options = [e for e in STT_ENGINES if e[1] in keys]
     current = env.get('DEFAULT_STT_ENGINE')
     default = next((i for i, e in enumerate(options) if e[0] == current), 0)
@@ -384,7 +385,8 @@ def step_stt(env, keys):
 
 def step_style(env):
     screen('Style')
-    print('What should happen to your words before they are pasted?\n')
+    print('What should happen to your words before they are pasted?')
+    print(f'{DIM}{CHANGE_LATER}{RESET}\n')
     current = env.get('DEFAULT_STYLE', 'clean')
     default = next((i for i, s in enumerate(STYLES) if s[0] == current), 0)
     labels = [label for _, label, _ in STYLES]
@@ -392,7 +394,7 @@ def step_style(env):
 
 def step_tts(env, keys):
     screen('Read aloud')
-    print(f'{DIM}Approximate paid-tier prices as of {PRICES_AS_OF}.{RESET}\n')
+    print(f'{DIM}Approximate paid-tier prices as of {PRICES_AS_OF}. {CHANGE_LATER}{RESET}\n')
     options = [e for e in TTS_ENGINES if e[0] in keys]
     current_engine = env.get('DEFAULT_TTS_ENGINE')
     current_model = env.get('GEMINI_TTS_MODEL', 'gemini-3.8-flash-lite-tts')
@@ -404,6 +406,7 @@ def step_voice(env, keys, tts):
     engine, gemini_model, *_ = tts
     voices = GEMINI_VOICES if engine == 'gemini' else OPENAI_VOICES
     screen('Voice')
+    print(f'{DIM}{CHANGE_LATER} The bubble plays a sample when you click a voice.{RESET}\n')
     current = env.get('DEFAULT_TTS_VOICE')
     default = next((i for i, (v, _) in enumerate(voices) if v == current), 3 if engine == 'gemini' else 0)
     labels = [f'{name:<14} {DIM}{desc}{RESET}' for name, desc in voices]

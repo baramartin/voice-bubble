@@ -38,6 +38,7 @@ DEFAULT_STYLE = os.getenv('DEFAULT_STYLE', 'clean')  # 'clean' is Smart mode
 
 GEMINI_TEXT_MODEL = os.getenv('GEMINI_TEXT_MODEL', 'gemini-3.5-flash-lite')
 GEMINI_TTS_MODEL = os.getenv('GEMINI_TTS_MODEL', 'gemini-3.8-flash-lite-tts')
+GEMINI_TTS_MODELS = {'gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts'}  # selectable in the bubble
 GEMINI_TRANSCRIBE_MODEL = os.getenv('GEMINI_TRANSCRIBE_MODEL', 'gemini-3.5-transcribe')
 # Comma-separated names/jargon to bias recognition toward, e.g. "Kubernetes, BigQuery, Bára"
 GEMINI_VOCABULARY = [t.strip() for t in os.getenv('GEMINI_TRANSCRIBE_VOCABULARY', '').split(',') if t.strip()]
@@ -85,7 +86,7 @@ def gemini_transcribe(audio_bytes, mime_type, mode):
     with gemini_post(body) as resp:
         return model_output_text(json.loads(resp.read()))
 
-def gemini_tts_stream(text, voice, style):
+def gemini_tts_stream(text, voice, style, model):
     """Stream from the Gemini Interactions API; returns a generator of raw PCM chunks
     (16-bit signed little-endian, mono, 24 kHz). Connection errors raise before the first chunk."""
     content = {'type': 'text', 'text': text}
@@ -93,7 +94,7 @@ def gemini_tts_stream(text, voice, style):
         content['annotations'] = [{'type': 'speech_metadata', 'style': style}]
 
     body = {
-        'model': GEMINI_TTS_MODEL,
+        'model': model,
         'input': [{'type': 'user_input', 'content': [content]}],
         'response_format': {'type': 'audio', 'mime_type': 'audio/l16', 'sample_rate': GEMINI_SAMPLE_RATE},
         'generation_config': {'speech_config': [{'voice': voice}]},
@@ -138,7 +139,10 @@ def get_config():
     """Which providers have keys, and the defaults chosen in the setup wizard."""
     return jsonify({
         'providers': {'openai': bool(api_key), 'gemini': bool(gemini_api_key)},
-        'defaults': {'stt_engine': DEFAULT_STT_ENGINE, 'tts_engine': DEFAULT_TTS_ENGINE, 'tts_voice': DEFAULT_TTS_VOICE,
+        # The bubble lists each TTS model separately, so report the engine as a model id
+        'defaults': {'stt_engine': DEFAULT_STT_ENGINE,
+                     'tts_engine': GEMINI_TTS_MODEL if DEFAULT_TTS_ENGINE == 'gemini' else 'gpt-4o-mini-tts',
+                     'tts_voice': DEFAULT_TTS_VOICE,
                      'style': DEFAULT_STYLE}
     })
 
@@ -333,13 +337,14 @@ def text_to_speech():
         text = data['text']
         voice = data.get('voice', 'alloy')
         instruction = data.get('instruction', '')
+        model = data.get('model') if data.get('model') in GEMINI_TTS_MODELS else GEMINI_TTS_MODEL
         provider = data.get('provider', 'openai')
 
         if provider == 'gemini':
             if not gemini_api_key:
                 return jsonify({'error': 'GEMINI_API_KEY not set in .env', 'success': False}), 500
             return Response(
-                gemini_tts_stream(text, voice, instruction),
+                gemini_tts_stream(text, voice, instruction, model),
                 mimetype=f'audio/l16; rate={GEMINI_SAMPLE_RATE}; channels=1',
                 headers={'X-Sample-Rate': str(GEMINI_SAMPLE_RATE), 'Access-Control-Expose-Headers': 'X-Sample-Rate'}
             )
