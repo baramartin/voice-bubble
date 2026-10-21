@@ -142,8 +142,8 @@ function createBubbleWindow() {
 
 function createTray() {
   // Use a simple icon - create one from the Electron default
-  tray = new Tray(path.join(__dirname, 'static', 'icon.png'));
-  tray.setToolTip('Whisper Dictation');
+  tray = new Tray(path.join(__dirname, 'static', 'icon.ico'));
+  tray.setToolTip('Voice Bubble');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show Bubble', click: () => bubbleWindow?.show() },
     { type: 'separator' },

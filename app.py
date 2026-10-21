@@ -20,15 +20,22 @@ load_dotenv()
 server = None
 app = Flask(__name__)
 
+# At least one provider is needed; either one alone is enough. Run `npm run setup` to create .env.
 api_key = os.getenv('OPENAI_API_KEY')
-if not api_key:
-    print("ERROR: OPENAI_API_KEY not found. Create a .env file with OPENAI_API_KEY=sk-...")
+gemini_api_key = os.getenv('GEMINI_API_KEY')
+if not api_key and not gemini_api_key:
+    print("ERROR: no API keys found. Run `npm run setup` (or copy .env.example to .env) "
+          "and add OPENAI_API_KEY and/or GEMINI_API_KEY.")
     sys.exit(1)
 
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=api_key) if api_key else None
 
-# Optional: Gemini TTS and transcription. Only needed when a Gemini engine is selected.
-gemini_api_key = os.getenv('GEMINI_API_KEY')
+# Defaults the bubble uses until the user picks something in its settings (written by the setup wizard)
+DEFAULT_STT_ENGINE = os.getenv('DEFAULT_STT_ENGINE', 'gemini-3.5-transcribe' if gemini_api_key else 'gpt-transcribe')
+DEFAULT_TTS_ENGINE = os.getenv('DEFAULT_TTS_ENGINE', 'gemini' if gemini_api_key else 'openai')
+DEFAULT_TTS_VOICE = os.getenv('DEFAULT_TTS_VOICE', 'Kore' if DEFAULT_TTS_ENGINE == 'gemini' else 'alloy')
+
+GEMINI_TEXT_MODEL = os.getenv('GEMINI_TEXT_MODEL', 'gemini-3.5-flash-lite')
 GEMINI_TTS_MODEL = os.getenv('GEMINI_TTS_MODEL', 'gemini-3.8-flash-lite-tts')
 GEMINI_TRANSCRIBE_MODEL = os.getenv('GEMINI_TRANSCRIBE_MODEL', 'gemini-3.5-transcribe')
 # Comma-separated names/jargon to bias recognition toward, e.g. "Kubernetes, BigQuery, Bára"
@@ -50,6 +57,18 @@ def gemini_post(body):
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"Gemini API {e.code}: {e.read().decode('utf-8', 'replace')}")
 
+def model_output_text(result):
+    """Join the text blocks of an interaction's model_output steps."""
+    return ''.join(
+        block.get('text', '')
+        for step in result.get('steps', []) if step.get('type') == 'model_output'
+        for block in step.get('content', []) if block.get('type') == 'text'
+    )
+
+def gemini_generate_text(prompt):
+    with gemini_post({'model': GEMINI_TEXT_MODEL, 'input': [{'type': 'text', 'text': prompt}]}) as resp:
+        return model_output_text(json.loads(resp.read()))
+
 def gemini_transcribe(audio_bytes, mime_type, mode):
     """Transcribe inline audio with Gemini 3.5 Transcribe. mode is 'verbatim' or 'smart'
     (smart removes fillers, applies spoken self-corrections and formats lists)."""
@@ -63,14 +82,7 @@ def gemini_transcribe(audio_bytes, mime_type, mode):
         'generation_config': {'transcription_config': transcription_config}
     }
     with gemini_post(body) as resp:
-        result = json.loads(resp.read())
-
-    # Transcript text lives in text blocks of the model_output steps
-    return ''.join(
-        block.get('text', '')
-        for step in result.get('steps', []) if step.get('type') == 'model_output'
-        for block in step.get('content', []) if block.get('type') == 'text'
-    )
+        return model_output_text(json.loads(resp.read()))
 
 def gemini_tts_stream(text, voice, style):
     """Stream from the Gemini Interactions API; returns a generator of raw PCM chunks
@@ -117,6 +129,17 @@ def gemini_tts_stream(text, voice, style):
 
     return generate()
 
+def openai_missing():
+    return jsonify({'error': 'OPENAI_API_KEY not set in .env', 'success': False}), 500
+
+@app.route('/config')
+def get_config():
+    """Which providers have keys, and the defaults chosen in the setup wizard."""
+    return jsonify({
+        'providers': {'openai': bool(api_key), 'gemini': bool(gemini_api_key)},
+        'defaults': {'stt_engine': DEFAULT_STT_ENGINE, 'tts_engine': DEFAULT_TTS_ENGINE, 'tts_voice': DEFAULT_TTS_VOICE}
+    })
+
 @app.route('/transcribe', methods=['POST'])
 def transcribe_audio():
     try:
@@ -144,6 +167,9 @@ def transcribe_audio():
                     'file_size_bytes': len(audio_bytes)
                 }
             })
+
+        if not client:
+            return openai_missing()
 
         # Save uploaded audio to temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp_file:
@@ -257,18 +283,24 @@ def transform_text():
         instruction = data.get('instruction', 'Format this text professionally')
         style = data.get('style', 'professional-email')
         
-        # Call OpenAI API for transformation
-        response = client.chat.completions.create(
-            model="gpt-4o",  # Using GPT-4o for transformation
-            messages=[
-                {"role": "system", "content": "You are an expert editor who can transform dictated text according to instructions."},
-                {"role": "user", "content": f"Please transform the following dictated text according to this instruction: {instruction}\n\n{text}"}
-            ],
-            temperature=0.7,
-            max_tokens=4000
-        )
-        
-        transformed_text = response.choices[0].message.content
+        system_prompt = "You are an expert editor who can transform dictated text according to instructions."
+        user_prompt = f"Please transform the following dictated text according to this instruction: {instruction}\n\n{text}"
+
+        if client:
+            response = client.chat.completions.create(
+                model="gpt-4o",  # Using GPT-4o for transformation
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=4000
+            )
+            transformed_text = response.choices[0].message.content
+        else:
+            # Gemini-only setup
+            transformed_text = gemini_generate_text(
+                f"{system_prompt} Reply with only the transformed text.\n\n{user_prompt}")
         
         # Return the transformed text
         return jsonify({
@@ -309,6 +341,9 @@ def text_to_speech():
                 mimetype=f'audio/l16; rate={GEMINI_SAMPLE_RATE}; channels=1',
                 headers={'X-Sample-Rate': str(GEMINI_SAMPLE_RATE), 'Access-Control-Expose-Headers': 'X-Sample-Rate'}
             )
+
+        if not client:
+            return openai_missing()
 
         if len(text) > 4096:
             text = text[:4096]

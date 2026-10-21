@@ -415,6 +415,7 @@ let levelInterval = null;
 let selectedDeviceId = localStorage.getItem('selectedMicId') || null;
 let selectedStyle = localStorage.getItem('selectedStyle') || 'none';
 let selectedSttEngine = localStorage.getItem('selectedSttEngine') || 'gemini-3.5-transcribe';
+let providers = { openai: true, gemini: true }; // replaced by /config on startup
 let pickerOpen = false;
 
 const speakBtn = document.getElementById('speak-btn');
@@ -600,7 +601,7 @@ async function renderSettingsPanel() {
   sttHeader.textContent = 'Transcription';
   settingsPanel.appendChild(sttHeader);
 
-  STT_ENGINES.forEach(engine => {
+  STT_ENGINES.filter(e => providers[e.provider]).forEach(engine => {
     settingsPanel.appendChild(makeOption(engine.label, engine.id === selectedSttEngine, () => selectSttEngine(engine.id)));
   });
 
@@ -643,7 +644,7 @@ async function renderSettingsPanel() {
   engineHeader.textContent = 'TTS Engine';
   settingsPanel.appendChild(engineHeader);
 
-  TTS_ENGINES.forEach(engine => {
+  TTS_ENGINES.filter(e => providers[e.id]).forEach(engine => {
     settingsPanel.appendChild(makeOption(engine.label, engine.id === selectedTtsEngine, () => selectTtsEngine(engine.id)));
   });
 
@@ -1163,9 +1164,38 @@ window.electronAPI.onSpeakClipboard((text) => {
   speakText(text);
 });
 
+// Load which providers have API keys, plus the defaults from the setup wizard. Saved choices win over defaults.
+async function loadConfig() {
+  // Flask starts alongside the bubble, so keep retrying for a bit
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      const config = await (await fetch(`${FLASK_URL}/config`)).json();
+      providers = config.providers;
+      const d = config.defaults;
+      if (!localStorage.getItem('selectedSttEngine')) selectedSttEngine = d.stt_engine;
+      if (!localStorage.getItem('selectedTtsEngine')) selectedTtsEngine = d.tts_engine;
+      if (d.tts_engine === 'gemini' && !localStorage.getItem('selectedGeminiVoice')) selectedGeminiVoice = d.tts_voice;
+      if (d.tts_engine === 'openai' && !localStorage.getItem('selectedVoice')) selectedVoice = d.tts_voice;
+
+      // A saved choice may point at a provider whose key was removed since
+      const sttEngine = STT_ENGINES.find(e => e.id === selectedSttEngine);
+      if (!sttEngine || !providers[sttEngine.provider]) {
+        selectedSttEngine = (STT_ENGINES.find(e => providers[e.provider]) || STT_ENGINES[0]).id;
+      }
+      if (!providers[selectedTtsEngine]) {
+        selectedTtsEngine = (TTS_ENGINES.find(e => providers[e.id]) || TTS_ENGINES[0]).id;
+      }
+      return;
+    } catch {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+}
+
 // Init: show style badge if a style was previously selected, pre-enumerate mics
 styleBadge.classList.toggle('active', selectedStyle !== 'none');
 enumerateMics();
+loadConfig();
 </script>
 </body>
 </html>

@@ -1,11 +1,14 @@
 {
-  "name": "whisper-dictation",
+  "name": "voice-bubble",
   "version": "1.0.0",
-  "description": "Floating dictation bubble - type anywhere with your voice",
+  "description": "Floating voice bubble for Windows: dictate into any app and have any text read aloud (Gemini / OpenAI)",
   "main": "main.js",
+  "license": "MIT",
   "scripts": {
+    "setup": "python setup_wizard.py",
     "start": "electron .",
-    "flask": "python app.py"
+    "flask": "python app.py",
+    "icon": "python scripts/make_icon.py"
   },
   "dependencies": {
     "electron": "^35.0.0"
