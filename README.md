@@ -40,12 +40,12 @@ npm run setup
 npm start
 ```
 
-The setup wizard walks you through:
+The setup wizard walks you through these steps (arrow keys to move, Enter to select):
 
 1. **API keys**: paste a [Gemini key](https://aistudio.google.com/apikey) and/or an [OpenAI key](https://platform.openai.com/api-keys). Each one is checked on the spot.
 2. **Dictation engine**, with prices
 3. **Read-aloud engine**, with prices
-4. **Voice**: type `p 3` to hear voice #3 before you pick it
+4. **Voice**: press `P` to hear the highlighted voice before you pick it
 5. **Custom vocabulary** (Gemini only): names or jargon it should recognize
 6. **Installing dependencies** (`pip` + `npm`)
 
@@ -58,7 +58,7 @@ It writes a `.env` file. Run it again anytime to change your choices; your curre
 | Start / stop dictation | `Ctrl+Shift+Space` or click the mic |
 | Read selected text aloud | `Ctrl+Shift+S` (copies the selection, then speaks it; press again to stop) |
 | Read the clipboard aloud | Click the speaker button |
-| Change engine, style, mic or voice | Click the settings button on the bubble |
+| Change engine, style, mic or voice | Click the settings button on the bubble (the Help tab lists all of this too) |
 
 Tip: choose **Clean up** with **Gemini 3.5 Transcribe** to get smart mode. It cleans up in a single call instead of transcribing first and rewriting afterwards.
 

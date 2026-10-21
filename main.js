@@ -128,7 +128,10 @@ function createBubbleWindow() {
 
   // Workaround for Electron bug #46882: frameless transparent windows
   // show a phantom title bar on blur on Windows.
-  bubbleWindow.on('blur', () => bubbleWindow.setMaximizable(false));
+  bubbleWindow.on('blur', () => {
+    bubbleWindow.setMaximizable(false);
+    bubbleWindow.webContents.send('window-blur'); // closes the settings panel on outside clicks
+  });
   bubbleWindow.on('focus', () => bubbleWindow.setMaximizable(false));
 
   // Track which external window last had focus.
@@ -190,17 +193,25 @@ app.whenReady().then(() => {
     clipboard.writeText(text);
   });
 
-  // IPC: resize bubble
-  ipcMain.on('resize-bubble', (event, { width, height }) => {
-    if (bubbleWindow) {
-      const bounds = bubbleWindow.getBounds();
-      bubbleWindow.setBounds({
-        x: bounds.x + bounds.width - width,
-        y: bounds.y + bounds.height - height,
-        width,
-        height
-      });
+  // IPC: resize bubble, keeping the bubble itself in place. The window normally grows upward
+  // (anchored at the bottom); if that would go off the top of the screen it grows downward instead.
+  // Returns the anchor so the renderer can lay out the panel above or below the bubble.
+  let resizeAnchor = 'bottom';
+  ipcMain.handle('resize-bubble', (event, { width, height }) => {
+    if (!bubbleWindow) return resizeAnchor;
+    const bounds = bubbleWindow.getBounds();
+    const growing = height > bounds.height;
+    if (growing) {
+      const workArea = screen.getDisplayMatching(bounds).workArea;
+      resizeAnchor = bounds.y + bounds.height - height >= workArea.y ? 'bottom' : 'top';
     }
+    bubbleWindow.setBounds({
+      x: bounds.x + bounds.width - width,
+      y: resizeAnchor === 'bottom' ? bounds.y + bounds.height - height : bounds.y,
+      width,
+      height
+    });
+    return resizeAnchor;
   });
 });
 

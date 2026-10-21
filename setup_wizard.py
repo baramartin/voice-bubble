@@ -53,9 +53,17 @@ OPENAI_VOICES = [(v, '') for v in
 
 os.system('')  # enables ANSI colors in older Windows consoles
 BOLD, DIM, GREEN, YELLOW, RED, CYAN, RESET = '\033[1m', '\033[2m', '\033[32m', '\033[33m', '\033[31m', '\033[36m', '\033[0m'
+# Arrow-key menus need a real terminal; piped input falls back to numbered menus
+INTERACTIVE = sys.stdin.isatty() and sys.stdout.isatty()
+STEPS = ['Keys', 'Dictation', 'Read aloud', 'Voice', 'Vocabulary', 'Finish']
 
-def heading(text):
-    print(f'\n{BOLD}{CYAN}== {text} =={RESET}')
+def screen(step):
+    """Clear the terminal and show the title plus a breadcrumb of the steps."""
+    if INTERACTIVE:
+        sys.stdout.write('\033[2J\033[3J\033[H')
+    trail = f' {DIM}>{RESET} '.join(
+        f'{BOLD}{CYAN}{name}{RESET}' if name == step else f'{DIM}{name}{RESET}' for name in STEPS)
+    print(f'{BOLD}Voice Bubble setup{RESET}\n{trail}\n')
 
 def ok(text):
     print(f'{GREEN}OK{RESET} {text}')
@@ -63,17 +71,71 @@ def ok(text):
 def warn(text):
     print(f'{YELLOW}!{RESET} {text}')
 
-def ask_yes_no(prompt, default=True):
-    hint = 'Y/n' if default else 'y/N'
-    while True:
-        answer = input(f'{prompt} [{hint}]: ').strip().lower()
-        if not answer:
-            return default
-        if answer in ('y', 'yes', 'n', 'no'):
-            return answer.startswith('y')
+def read_key():
+    """Read one keypress: 'up', 'down', 'home', 'end', 'enter', or a lowercase character."""
+    if os.name == 'nt':
+        import msvcrt
+        ch = msvcrt.getwch()
+        if ch in ('\x00', '\xe0'):  # arrow/navigation keys arrive as a two-character sequence
+            return {'H': 'up', 'P': 'down', 'G': 'home', 'O': 'end'}.get(msvcrt.getwch(), '')
+    else:
+        import termios, tty
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+            if ch == '\x1b':
+                return {'[A': 'up', '[B': 'down', '[H': 'home', '[F': 'end'}.get(sys.stdin.read(2), '')
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    if ch == '\x03':
+        raise KeyboardInterrupt
+    return 'enter' if ch in ('\r', '\n') else ch.lower()
 
-def choose(prompt, labels, default_index=0, on_preview=None):
-    """Numbered menu. Returns the chosen index. With on_preview, 'p 3' previews option 3."""
+def choose(prompt, labels, default_index=0, details=None, on_preview=None):
+    """Menu returning the chosen index. Arrow keys + Enter in a terminal; details[i] is shown for the
+    highlighted option. on_preview(i) is called on P and returns a status message."""
+    if not INTERACTIVE:
+        return choose_numbered(prompt, labels, default_index, on_preview)
+
+    hint = 'Up/Down to move, Enter to select' + (', P to preview' if on_preview else '')
+    print(f'{BOLD}{prompt}{RESET}  {DIM}{hint}{RESET}')
+    index, status, drawn = default_index, '', 0
+    rows = min(len(labels), 12)  # long lists scroll
+    while True:
+        top = min(max(0, index - rows // 2), len(labels) - rows)
+        lines = [f'  {DIM}^ {top} more{RESET}' if top > 0 else '']
+        for i in range(top, top + rows):
+            lines.append(f'{CYAN}> {labels[i]}{RESET}' if i == index else f'  {labels[i]}')
+        below = len(labels) - top - rows
+        lines.append(f'  {DIM}v {below} more{RESET}' if below > 0 else '')
+        lines.append(f'  {DIM}{details[index]}{RESET}' if details and details[index] else '')
+        lines.append(status)
+
+        if drawn:
+            sys.stdout.write(f'\033[{drawn}F')  # back to the top of the menu and redraw in place
+        sys.stdout.write(''.join(f'\033[2K{line}\n' for line in lines))
+        sys.stdout.flush()
+        drawn = len(lines)
+
+        key = read_key()
+        if key == 'up':
+            index = (index - 1) % len(labels)
+        elif key == 'down':
+            index = (index + 1) % len(labels)
+        elif key == 'home':
+            index = 0
+        elif key == 'end':
+            index = len(labels) - 1
+        elif key == 'enter':
+            return index
+        elif key == 'p' and on_preview:
+            sys.stdout.write(f'\033[1F\033[2K  {DIM}Generating a sample...{RESET}\n')
+            sys.stdout.flush()
+            status = on_preview(index)
+
+def choose_numbered(prompt, labels, default_index, on_preview):
     for i, label in enumerate(labels, 1):
         marker = f'{GREEN}*{RESET}' if i - 1 == default_index else ' '
         print(f' {marker} {i:>2}. {label}')
@@ -87,10 +149,13 @@ def choose(prompt, labels, default_index=0, on_preview=None):
         if on_preview and answer.startswith('p'):
             number = answer[1:].strip()
             if number.isdigit() and 1 <= int(number) <= len(labels):
-                on_preview(int(number) - 1)
+                print(on_preview(int(number) - 1))
             continue
         if answer.isdigit() and 1 <= int(answer) <= len(labels):
             return int(answer) - 1
+
+def ask_yes_no(prompt, default=True):
+    return choose(prompt, ['Yes', 'No'], 0 if default else 1) == 0
 
 def mask(key):
     return f'{key[:5]}...{key[-4:]}' if len(key) > 12 else '***'
@@ -176,22 +241,19 @@ def play_wav(wav_bytes):
 # ---- Wizard steps ----
 
 def step_keys(env):
-    heading('1. API keys')
-    print('You need at least one. Either provider alone covers dictation and read-aloud.')
-    print(f'  OpenAI: https://platform.openai.com/api-keys')
-    print(f'  Gemini: https://aistudio.google.com/apikey  {DIM}(has a free tier; free-tier data may be used by Google){RESET}')
-    print(f'{DIM}Keys are hidden while you paste them (right-click or Ctrl+V), then press Enter.{RESET}')
+    screen('Keys')
+    print('You need at least one key. Either provider alone covers dictation and read-aloud.\n')
+    print(f'  Gemini: https://aistudio.google.com/apikey  {DIM}(free tier; free-tier data may be used by Google){RESET}')
+    print(f'  OpenAI: https://platform.openai.com/api-keys  {DIM}(optional){RESET}\n')
+    print(f'{DIM}Keys stay hidden while you paste them (right-click or Ctrl+V), then press Enter.{RESET}\n')
 
     keys = {}
-    for provider, env_name, label in [('openai', 'OPENAI_API_KEY', 'OpenAI'), ('gemini', 'GEMINI_API_KEY', 'Gemini')]:
+    for provider, env_name, label in [('gemini', 'GEMINI_API_KEY', 'Gemini'), ('openai', 'OPENAI_API_KEY', 'OpenAI')]:
         current = env.get(env_name, '')
         while True:
             suffix = f'Enter keeps {mask(current)}, "-" removes it' if current else 'Enter to skip'
             entered = getpass.getpass(f'{label} API key ({suffix}): ').strip()
-            if entered == '-':
-                key = ''
-            else:
-                key = entered or current
+            key = '' if entered == '-' else (entered or current)
             if not key:
                 print(f'  {DIM}No {label} key.{RESET}')
                 break
@@ -202,66 +264,71 @@ def step_keys(env):
                 keys[provider] = key
                 break
             print(f'{RED}{error}{RESET}')
-            if not ask_yes_no('  Try another key?'):
-                if ask_yes_no(f'  Save this {label} key anyway?', default=False):
+            if not ask_yes_no('Try another key?'):
+                if ask_yes_no(f'Save this {label} key anyway?', default=False):
                     keys[provider] = key
                 break
     if not keys:
-        print(f'{RED}At least one key is required.{RESET}')
+        input(f'\n{RED}At least one key is required.{RESET} Press Enter to try again.')
         return step_keys(env)
     return keys
 
+def engine_menu(prompt, options, default):
+    labels = [f'{name:<26} {price}' for _, _, name, price, _ in options]
+    return options[choose(prompt, labels, default, details=[note for *_, note in options])]
+
 def step_stt(env, keys):
-    heading('2. Speech-to-text (dictation)')
+    screen('Dictation')
+    print(f'{DIM}Approximate paid-tier prices as of {PRICES_AS_OF}.{RESET}\n')
     options = [e for e in STT_ENGINES if e[1] in keys]
     current = env.get('DEFAULT_STT_ENGINE')
     default = next((i for i, e in enumerate(options) if e[0] == current), 0)
-    labels = [f'{name:<26} {BOLD}{price:<12}{RESET} {DIM}{note}{RESET}' for _, _, name, price, note in options]
-    return options[choose('Transcription engine', labels, default)]
+    return engine_menu('Transcription engine', options, default)
 
 def step_tts(env, keys):
-    heading('3. Text-to-speech (read aloud)')
+    screen('Read aloud')
+    print(f'{DIM}Approximate paid-tier prices as of {PRICES_AS_OF}.{RESET}\n')
     options = [e for e in TTS_ENGINES if e[0] in keys]
     current_engine = env.get('DEFAULT_TTS_ENGINE')
     current_model = env.get('GEMINI_TTS_MODEL', 'gemini-3.8-flash-lite-tts')
     default = next((i for i, e in enumerate(options)
                     if e[0] == current_engine and (e[1] is None or e[1] == current_model)), 0)
-    labels = [f'{name:<26} {BOLD}{price:<12}{RESET} {DIM}{note}{RESET}' for _, _, name, price, note in options]
-    return options[choose('Read-aloud engine', labels, default)]
+    return engine_menu('Read-aloud engine', options, default)
 
 def step_voice(env, keys, tts):
     engine, gemini_model, *_ = tts
     voices = GEMINI_VOICES if engine == 'gemini' else OPENAI_VOICES
-    heading('4. Voice')
+    screen('Voice')
     current = env.get('DEFAULT_TTS_VOICE')
     default = next((i for i, (v, _) in enumerate(voices) if v == current), 3 if engine == 'gemini' else 0)
     labels = [f'{name:<14} {DIM}{desc}{RESET}' for name, desc in voices]
 
     def preview(index):
         voice = voices[index][0]
-        print(f'  Generating a sample of {voice}...', end=' ', flush=True)
         try:
-            wav = synthesize_wav(engine, gemini_model, voice, keys)
-            print('playing.')
-            play_wav(wav)
+            play_wav(synthesize_wav(engine, gemini_model, voice, keys))
+            return f'  {GREEN}Played {voice}.{RESET}'
         except Exception as e:
-            print(f'{RED}preview failed: {e}{RESET}')
+            return f'  {RED}Preview failed: {e}{RESET}'
 
-    return voices[choose('Voice', labels, default, on_preview=preview)][0]
+    # Previews play through winsound, which only exists on Windows
+    return voices[choose('Voice', labels, default, on_preview=preview if os.name == 'nt' else None)][0]
 
 def step_vocabulary(env, stt):
     if stt[1] != 'gemini':
         return env.get('GEMINI_TRANSCRIBE_VOCABULARY')
-    heading('5. Custom vocabulary (optional)')
-    print('Names or jargon Gemini should recognize, comma-separated (e.g. "Kubernetes, BigQuery, Bára").')
+    screen('Vocabulary')
+    print('Optional: names or jargon Gemini should recognize, comma-separated.')
+    print(f'{DIM}Example: Kubernetes, BigQuery, Bara{RESET}\n')
     current = env.get('GEMINI_TRANSCRIBE_VOCABULARY', '')
-    entered = input(f'Vocabulary ({"Enter keeps current, " if current else ""}"-" for none): ').strip()
+    if current:
+        print(f'Current: {current}\n')
+    entered = input(f'Vocabulary ({"Enter keeps current, " if current else "Enter to skip, "}"-" for none): ').strip()
     if entered == '-':
         return None
     return entered or current or None
 
 def step_install():
-    heading('Dependencies')
     commands = [([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'], 'Python packages'),
                 (['npm', 'install'], 'Electron')]
     if not ask_yes_no('Install/update dependencies now (pip + npm)?'):
@@ -275,10 +342,9 @@ def step_install():
             warn(f'{label} failed to install: {e}')
 
 def main():
-    print(f'{BOLD}Voice Bubble setup{RESET}')
-    print(f'{DIM}Prices are approximate, as of {PRICES_AS_OF}, for the paid tiers. Check the providers\' pricing pages.{RESET}')
     if sys.platform != 'win32':
         warn('Voice Bubble currently runs on Windows only (pasting uses Win32 APIs).')
+        input('Press Enter to continue anyway.')
 
     env = read_env()
     keys = step_keys(env)
@@ -288,8 +354,8 @@ def main():
     vocabulary = step_vocabulary(env, stt)
 
     updates = {
-        'OPENAI_API_KEY': keys.get('openai'),
         'GEMINI_API_KEY': keys.get('gemini'),
+        'OPENAI_API_KEY': keys.get('openai'),
         'DEFAULT_STT_ENGINE': stt[0],
         'DEFAULT_TTS_ENGINE': tts[0],
         'DEFAULT_TTS_VOICE': voice,
@@ -299,11 +365,11 @@ def main():
         updates['GEMINI_TTS_MODEL'] = tts[1]
     write_env(updates)
 
-    heading('Saved')
-    ok(f'Wrote {ENV_PATH}')
-    print(f'  Dictation:  {stt[2]}')
-    print(f'  Read-aloud: {tts[2]}, voice {voice}')
-    print(f'{DIM}You can switch engines and voices anytime from the bubble\'s settings.{RESET}')
+    screen('Finish')
+    ok(f'Saved your settings to {ENV_PATH}')
+    print(f'   Dictation:  {stt[2]}')
+    print(f'   Read-aloud: {tts[2]}, voice {voice}')
+    print(f"{DIM}   You can switch engines and voices anytime in the bubble's settings.{RESET}\n")
 
     step_install()
     print(f'\n{BOLD}Done!{RESET} Start Voice Bubble with: {CYAN}npm start{RESET}')
@@ -313,4 +379,4 @@ if __name__ == '__main__':
     try:
         main()
     except (KeyboardInterrupt, EOFError):
-        print('\nSetup cancelled. Nothing was saved unless you saw "Saved".')
+        print(f'{RESET}\nSetup cancelled. Nothing was saved unless you saw "Saved your settings".')

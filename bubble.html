@@ -12,7 +12,13 @@
     font-family: 'Segoe UI', sans-serif;
   }
 
+  /* Pinned to the window's bottom edge (or top when the panel opens below), so the bubble
+     stays put while the window grows to show the settings panel */
   .bubble-container {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -197,26 +203,125 @@
 
   /* Settings dropdown */
   .settings-panel {
-    position: absolute;
+    position: fixed;
     bottom: 76px;
     right: 4px;
+    width: 360px;
+    height: 400px;
     background: rgba(30, 30, 40, 0.95);
     backdrop-filter: blur(20px);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
-    padding: 8px 0;
-    min-width: 280px;
-    max-width: 360px;
-    max-height: 420px;
-    overflow-y: auto;
     display: none;
+    flex-direction: column;
+    overflow: hidden;
     z-index: 100;
     -webkit-app-region: no-drag;
   }
 
+  /* Near the top of the screen the window grows downward and the panel opens below the bubble */
+  body.panel-below .bubble-container { top: 0; bottom: auto; }
+  body.panel-below .settings-panel { top: 76px; bottom: auto; }
+
   .settings-panel.open {
-    display: block;
+    display: flex;
     animation: fade-in 0.15s ease;
+  }
+
+  .settings-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+  }
+
+  .settings-tab {
+    flex: 1;
+    padding: 8px 6px 9px;
+    border: none;
+    background: none;
+    color: rgba(255,255,255,0.5);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .settings-tab:hover { color: rgba(255,255,255,0.8); }
+
+  .settings-tab.active {
+    color: #fff;
+    border-bottom-color: #667eea;
+  }
+
+  .settings-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0 8px;
+  }
+
+  .settings-hint {
+    padding: 0 14px 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: rgba(255,255,255,0.4);
+  }
+
+  .voice-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 2px 10px 4px;
+  }
+
+  .voice-chip {
+    padding: 6px 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    background: none;
+    color: rgba(255,255,255,0.8);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .voice-chip:hover { background: rgba(255,255,255,0.08); }
+
+  .voice-chip.selected {
+    border-color: #667eea;
+    background: rgba(102, 126, 234, 0.15);
+    color: #fff;
+  }
+
+  .voice-chip .voice-desc {
+    display: block;
+    font-size: 10px;
+    color: rgba(255,255,255,0.4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .help-item {
+    padding: 4px 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(255,255,255,0.75);
+  }
+
+  .help-item kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.1);
+    font-family: inherit;
+    font-size: 11px;
+    color: #fff;
   }
 
   @keyframes fade-in {
@@ -239,7 +344,7 @@
   }
 
   .settings-option {
-    padding: 10px 14px;
+    padding: 8px 14px;
     color: rgba(255,255,255,0.8);
     font-size: 13px;
     cursor: pointer;
@@ -469,11 +574,15 @@ const TTS_ENGINES = [
   { id: 'openai', label: 'OpenAI gpt-4o-mini-tts' },
 ];
 
+// Voice characters as described in Google's docs
 const GEMINI_VOICES = [
-  'Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir', 'Leda', 'Orus', 'Aoede', 'Callirrhoe', 'Autonoe',
-  'Enceladus', 'Iapetus', 'Umbriel', 'Algieba', 'Despina', 'Erinome', 'Algenib', 'Rasalgethi', 'Laomedeia', 'Achernar',
-  'Alnilam', 'Schedar', 'Gacrux', 'Pulcherrima', 'Achird', 'Zubenelgenubi', 'Vindemiatrix', 'Sadachbia', 'Sadaltager', 'Sulafat',
-].map(name => ({ id: name, label: name }));
+  ['Zephyr', 'Bright'], ['Puck', 'Upbeat'], ['Charon', 'Informative'], ['Kore', 'Firm'], ['Fenrir', 'Excitable'],
+  ['Leda', 'Youthful'], ['Orus', 'Firm'], ['Aoede', 'Breezy'], ['Callirrhoe', 'Easy-going'], ['Autonoe', 'Bright'],
+  ['Enceladus', 'Breathy'], ['Iapetus', 'Clear'], ['Umbriel', 'Easy-going'], ['Algieba', 'Smooth'], ['Despina', 'Smooth'],
+  ['Erinome', 'Clear'], ['Algenib', 'Gravelly'], ['Rasalgethi', 'Informative'], ['Laomedeia', 'Upbeat'], ['Achernar', 'Soft'],
+  ['Alnilam', 'Firm'], ['Schedar', 'Even'], ['Gacrux', 'Mature'], ['Pulcherrima', 'Forward'], ['Achird', 'Friendly'],
+  ['Zubenelgenubi', 'Casual'], ['Vindemiatrix', 'Gentle'], ['Sadachbia', 'Lively'], ['Sadaltager', 'Knowledgeable'], ['Sulafat', 'Warm'],
+].map(([name, desc]) => ({ id: name, label: name, desc }));
 
 const SPEECH_STYLES = [
   { id: 'none', label: 'None (natural)', instruction: '' },
@@ -561,13 +670,17 @@ function setState(state, message) {
 }
 
 async function enumerateMics() {
-  try {
-    const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    tempStream.getTracks().forEach(t => t.stop());
-  } catch (e) { /* permission denied - labels will be empty */ }
-
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  return devices.filter(d => d.kind === 'audioinput');
+  const listMics = async () => (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  let mics = await listMics();
+  // Device labels stay empty until mic access has been granted once; only then open a stream
+  if (mics.length > 0 && !mics[0].label) {
+    try {
+      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tempStream.getTracks().forEach(t => t.stop());
+      mics = await listMics();
+    } catch (e) { /* permission denied - labels will be empty */ }
+  }
+  return mics;
 }
 
 function makeOption(label, isSelected, onClick) {
@@ -578,54 +691,69 @@ function makeOption(label, isSelected, onClick) {
   return btn;
 }
 
-async function renderSettingsPanel() {
-  settingsPanel.innerHTML = '';
+let settingsTab = localStorage.getItem('settingsTab') || 'dictation';
 
-  // Style section
-  const styleHeader = document.createElement('div');
-  styleHeader.className = 'settings-section-header';
-  styleHeader.textContent = 'Output Style';
-  settingsPanel.appendChild(styleHeader);
+const SETTINGS_TABS = [
+  { id: 'dictation', label: 'Dictation' },
+  { id: 'speech', label: 'Read aloud' },
+  { id: 'help', label: 'Help' },
+];
 
+function addSection(container, title, hint) {
+  if (container.childElementCount > 0) {
+    const divider = document.createElement('div');
+    divider.className = 'settings-divider';
+    container.appendChild(divider);
+  }
+  const header = document.createElement('div');
+  header.className = 'settings-section-header';
+  header.textContent = title;
+  container.appendChild(header);
+  if (hint) {
+    const hintEl = document.createElement('div');
+    hintEl.className = 'settings-hint';
+    hintEl.textContent = hint;
+    container.appendChild(hintEl);
+  }
+}
+
+function makeVoiceChip(voice, isSelected) {
+  const chip = document.createElement('button');
+  chip.className = 'voice-chip' + (isSelected ? ' selected' : '');
+  chip.title = voice.desc ? `${voice.label}: ${voice.desc}` : voice.label;
+  chip.textContent = voice.label;
+  if (voice.desc) {
+    const desc = document.createElement('span');
+    desc.className = 'voice-desc';
+    desc.textContent = voice.desc;
+    chip.appendChild(desc);
+  }
+  chip.addEventListener('click', () => selectVoice(voice.id));
+  return chip;
+}
+
+async function renderDictationTab(body) {
+  addSection(body, 'Output style', 'Applied to the transcript before pasting. "Clean up" with Gemini uses its built-in smart mode.');
   STYLES.forEach(style => {
-    settingsPanel.appendChild(makeOption(style.label, style.id === selectedStyle, () => selectStyle(style.id)));
+    body.appendChild(makeOption(style.label, style.id === selectedStyle, () => selectStyle(style.id)));
   });
 
-  // Transcription engine section
-  const sttDivider = document.createElement('div');
-  sttDivider.className = 'settings-divider';
-  settingsPanel.appendChild(sttDivider);
-
-  const sttHeader = document.createElement('div');
-  sttHeader.className = 'settings-section-header';
-  sttHeader.textContent = 'Transcription';
-  settingsPanel.appendChild(sttHeader);
-
+  addSection(body, 'Transcription engine', 'Gemini has the best cleanup; OpenAI is a bit faster.');
   STT_ENGINES.filter(e => providers[e.provider]).forEach(engine => {
-    settingsPanel.appendChild(makeOption(engine.label, engine.id === selectedSttEngine, () => selectSttEngine(engine.id)));
+    body.appendChild(makeOption(engine.label, engine.id === selectedSttEngine, () => selectSttEngine(engine.id)));
   });
 
-  // Divider
-  const divider = document.createElement('div');
-  divider.className = 'settings-divider';
-  settingsPanel.appendChild(divider);
-
-  // Mic section
-  const micHeader = document.createElement('div');
-  micHeader.className = 'settings-section-header';
-  micHeader.textContent = 'Microphone';
-  settingsPanel.appendChild(micHeader);
-
+  addSection(body, 'Microphone');
   const mics = await enumerateMics();
   if (mics.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'settings-option';
     empty.innerHTML = '<span class="option-name">No microphones found</span>';
-    settingsPanel.appendChild(empty);
+    body.appendChild(empty);
   } else {
     mics.forEach((mic, i) => {
       const label = mic.label || `Microphone ${i + 1}`;
-      settingsPanel.appendChild(makeOption(label, mic.deviceId === selectedDeviceId, () => selectMic(mic.deviceId)));
+      body.appendChild(makeOption(label, mic.deviceId === selectedDeviceId, () => selectMic(mic.deviceId)));
     });
     if (!selectedDeviceId && mics.length > 0) {
       const defaultMic = mics.find(m => m.deviceId === 'default') || mics[0];
@@ -633,50 +761,76 @@ async function renderSettingsPanel() {
       localStorage.setItem('selectedMicId', selectedDeviceId);
     }
   }
+}
 
-  // TTS engine section
-  const engineDivider = document.createElement('div');
-  engineDivider.className = 'settings-divider';
-  settingsPanel.appendChild(engineDivider);
-
-  const engineHeader = document.createElement('div');
-  engineHeader.className = 'settings-section-header';
-  engineHeader.textContent = 'TTS Engine';
-  settingsPanel.appendChild(engineHeader);
-
+function renderSpeechTab(body) {
+  addSection(body, 'Engine', 'Gemini starts speaking sooner because it streams the audio.');
   TTS_ENGINES.filter(e => providers[e.id]).forEach(engine => {
-    settingsPanel.appendChild(makeOption(engine.label, engine.id === selectedTtsEngine, () => selectTtsEngine(engine.id)));
+    body.appendChild(makeOption(engine.label, engine.id === selectedTtsEngine, () => selectTtsEngine(engine.id)));
   });
 
-  // Voice section
-  const voiceDivider = document.createElement('div');
-  voiceDivider.className = 'settings-divider';
-  settingsPanel.appendChild(voiceDivider);
-
-  const voiceHeader = document.createElement('div');
-  voiceHeader.className = 'settings-section-header';
-  voiceHeader.textContent = 'TTS Voice';
-  settingsPanel.appendChild(voiceHeader);
-
+  addSection(body, 'Voice');
+  const grid = document.createElement('div');
+  grid.className = 'voice-grid';
   const voices = selectedTtsEngine === 'gemini' ? GEMINI_VOICES : VOICES;
   const currentVoice = currentTtsVoice();
-  voices.forEach(voice => {
-    settingsPanel.appendChild(makeOption(voice.label, voice.id === currentVoice, () => selectVoice(voice.id)));
-  });
+  voices.forEach(voice => grid.appendChild(makeVoiceChip(voice, voice.id === currentVoice)));
+  body.appendChild(grid);
 
-  // Speech style section
-  const speechDivider = document.createElement('div');
-  speechDivider.className = 'settings-divider';
-  settingsPanel.appendChild(speechDivider);
-
-  const speechHeader = document.createElement('div');
-  speechHeader.className = 'settings-section-header';
-  speechHeader.textContent = 'Speech Style';
-  settingsPanel.appendChild(speechHeader);
-
+  addSection(body, 'Speech style', 'How the text is performed: pace, tone and emotion.');
   SPEECH_STYLES.forEach(style => {
-    settingsPanel.appendChild(makeOption(style.label, style.id === selectedSpeechStyle, () => selectSpeechStyle(style.id)));
+    body.appendChild(makeOption(style.label, style.id === selectedSpeechStyle, () => selectSpeechStyle(style.id)));
   });
+}
+
+function renderHelpTab(body) {
+  const items = [
+    ['Dictate', '<kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Space</kbd> or click the mic. Press again to stop; the text is pasted into the window you were using.'],
+    ['Read aloud', 'Select text anywhere and press <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd>. Press it again to stop. The speaker button reads the clipboard.'],
+    ['Styles', 'Pick an output style under Dictation to clean up, reformat or rewrite what you said before it\'s pasted. A dot on the settings button means a style is active.'],
+    ['Move the bubble', 'Drag it by its dark background.'],
+    ['API keys', 'To add or change keys, run <kbd>npm run setup</kbd> in the app folder and restart.'],
+    ['Close this panel', 'Click anywhere outside it or press <kbd>Esc</kbd>.'],
+  ];
+  items.forEach(([title, text]) => {
+    addSection(body, title);
+    const item = document.createElement('div');
+    item.className = 'help-item';
+    item.innerHTML = text;
+    body.appendChild(item);
+  });
+}
+
+async function renderSettingsPanel() {
+  // Keep the scroll position across re-renders (every selection re-renders the panel)
+  const oldBody = settingsPanel.querySelector('.settings-body');
+  const scrollTop = oldBody && oldBody.dataset.tab === settingsTab ? oldBody.scrollTop : 0;
+
+  const tabs = document.createElement('div');
+  tabs.className = 'settings-tabs';
+  SETTINGS_TABS.forEach(tab => {
+    const btn = document.createElement('button');
+    btn.className = 'settings-tab' + (tab.id === settingsTab ? ' active' : '');
+    btn.textContent = tab.label;
+    btn.addEventListener('click', () => selectSettingsTab(tab.id));
+    tabs.appendChild(btn);
+  });
+
+  const body = document.createElement('div');
+  body.className = 'settings-body';
+  body.dataset.tab = settingsTab;
+  if (settingsTab === 'dictation') await renderDictationTab(body);
+  else if (settingsTab === 'speech') renderSpeechTab(body);
+  else renderHelpTab(body);
+
+  settingsPanel.replaceChildren(tabs, body);
+  body.scrollTop = scrollTop;
+}
+
+function selectSettingsTab(tabId) {
+  settingsTab = tabId;
+  localStorage.setItem('settingsTab', tabId);
+  renderSettingsPanel();
 }
 
 function selectStyle(styleId) {
@@ -704,19 +858,22 @@ function selectMic(deviceId) {
   renderSettingsPanel();
 }
 
-function togglePicker() {
-  pickerOpen = !pickerOpen;
+async function togglePicker() {
   if (pickerOpen) {
-    renderSettingsPanel();
-    settingsPanel.classList.add('open');
-    settingsBtn.classList.add('active');
-    window.electronAPI.resizeBubble(380, 620);
-  } else {
     closePicker();
+    return;
   }
+  pickerOpen = true;
+  // The main process grows the window upward, or downward when the bubble is near the top of the screen
+  const anchor = await window.electronAPI.resizeBubble(380, 484);
+  document.body.classList.toggle('panel-below', anchor === 'top');
+  await renderSettingsPanel();
+  settingsPanel.classList.add('open');
+  settingsBtn.classList.add('active');
 }
 
 function closePicker() {
+  if (!pickerOpen) return;
   pickerOpen = false;
   settingsPanel.classList.remove('open');
   settingsBtn.classList.remove('active');
@@ -1136,10 +1293,19 @@ settingsBtn.addEventListener('click', (e) => {
   togglePicker();
 });
 
-document.addEventListener('click', (e) => {
-  if (pickerOpen && !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
-    closePicker();
-  }
+// Clicks inside the panel stop here. Checking settingsPanel.contains(e.target) at the document level
+// doesn't work: picking an option re-renders the panel, so the clicked element is already detached.
+settingsPanel.addEventListener('click', (e) => e.stopPropagation());
+
+document.addEventListener('click', () => {
+  if (pickerOpen) closePicker();
+});
+
+// Clicks outside the bubble window never reach this page, so close when the window loses focus
+window.electronAPI.onWindowBlur(() => closePicker());
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closePicker();
 });
 
 speakBtn.addEventListener('click', async (e) => {
