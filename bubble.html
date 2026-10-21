@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: transparent;
+    overflow: hidden;
+    user-select: none;
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  .bubble-container {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    height: 72px;
+    padding: 4px;
+    -webkit-app-region: drag;
+  }
+
+  .bubble {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(30, 30, 40, 0.92);
+    backdrop-filter: blur(20px);
+    border-radius: 36px;
+    padding: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+  }
+
+  .bubble:hover {
+    box-shadow: 0 6px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.12);
+  }
+
+  .mic-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s ease;
+    -webkit-app-region: no-drag;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .mic-btn.idle {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+  }
+
+  .mic-btn.idle:hover {
+    background: linear-gradient(135deg, #7b8ff0, #8b5cb8);
+    transform: scale(1.08);
+  }
+
+  .mic-btn.recording {
+    background: #e74c3c;
+    animation: pulse-rec 1.5s infinite;
+  }
+
+  .mic-btn.transcribing {
+    background: #f39c12;
+    cursor: wait;
+  }
+
+  .mic-btn.success {
+    background: #27ae60;
+  }
+
+  .mic-btn.error {
+    background: #e74c3c;
+  }
+
+  @keyframes pulse-rec {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.5); }
+    50% { box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
+  }
+
+  .mic-icon {
+    width: 22px;
+    height: 22px;
+    fill: white;
+  }
+
+  .info-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+    max-width: 0;
+    opacity: 0;
+    transition: max-width 0.3s ease, opacity 0.25s ease, padding 0.3s ease;
+    padding-right: 0;
+    white-space: nowrap;
+  }
+
+  .info-panel.visible {
+    max-width: 180px;
+    opacity: 1;
+    padding-left: 10px;
+    padding-right: 12px;
+  }
+
+  .info-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .info-value {
+    font-size: 16px;
+    color: white;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .level-bar-container {
+    height: 3px;
+    width: 100%;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 2px;
+  }
+
+  .level-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4CAF50, #FFEB3B, #FF5722);
+    border-radius: 2px;
+    transition: width 0.08s ease;
+  }
+
+  /* Spinner for transcribing state */
+  .spinner {
+    width: 22px;
+    height: 22px;
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .checkmark {
+    font-size: 20px;
+    color: white;
+  }
+
+  /* Settings gear button */
+  .settings-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.1);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    -webkit-app-region: no-drag;
+    flex-shrink: 0;
+  }
+
+  .settings-btn:hover {
+    background: rgba(255,255,255,0.2);
+    transform: scale(1.1);
+  }
+
+  .settings-btn.active {
+    background: rgba(102, 126, 234, 0.4);
+  }
+
+  .settings-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: rgba(255,255,255,0.6);
+    transition: fill 0.2s ease;
+  }
+
+  .settings-btn:hover svg, .settings-btn.active svg {
+    fill: white;
+  }
+
+  /* Settings dropdown */
+  .settings-panel {
+    position: absolute;
+    bottom: 76px;
+    right: 4px;
+    background: rgba(30, 30, 40, 0.95);
+    backdrop-filter: blur(20px);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+    padding: 8px 0;
+    min-width: 280px;
+    max-width: 360px;
+    max-height: 420px;
+    overflow-y: auto;
+    display: none;
+    z-index: 100;
+    -webkit-app-region: no-drag;
+  }
+
+  .settings-panel.open {
+    display: block;
+    animation: fade-in 0.15s ease;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .settings-section-header {
+    padding: 8px 14px 6px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.35);
+  }
+
+  .settings-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 6px 0;
+  }
+
+  .settings-option {
+    padding: 10px 14px;
+    color: rgba(255,255,255,0.8);
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s ease;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+
+  .settings-option:hover {
+    background: rgba(255,255,255,0.08);
+  }
+
+  .settings-option.selected {
+    color: #667eea;
+  }
+
+  .settings-option .check {
+    width: 16px;
+    flex-shrink: 0;
+    text-align: center;
+    font-size: 12px;
+  }
+
+  .settings-option .option-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .style-badge {
+    display: none;
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #667eea;
+  }
+
+  .style-badge.active {
+    display: block;
+  }
+
+  /* Speak-aloud button */
+  .speak-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.1);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    -webkit-app-region: no-drag;
+    flex-shrink: 0;
+  }
+
+  .speak-btn:hover {
+    background: rgba(255,255,255,0.2);
+    transform: scale(1.1);
+  }
+
+  .speak-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: rgba(255,255,255,0.6);
+    transition: fill 0.2s ease;
+  }
+
+  .speak-btn:hover svg {
+    fill: white;
+  }
+
+  .speak-btn.loading {
+    background: rgba(243, 156, 18, 0.4);
+    cursor: wait;
+  }
+
+  .speak-btn.loading svg {
+    fill: white;
+  }
+
+  .speak-btn.speaking {
+    background: rgba(102, 126, 234, 0.5);
+    animation: pulse-speak 1.5s infinite;
+  }
+
+  .speak-btn.speaking svg {
+    fill: white;
+  }
+
+  @keyframes pulse-speak {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(102, 126, 234, 0); }
+  }
+
+  .settings-panel::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .settings-panel::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="bubble-container">
+  <div class="settings-panel" id="settings-panel"></div>
+  <div class="bubble" id="bubble">
+    <div class="info-panel" id="info-panel">
+      <div class="info-label" id="info-label">Recording</div>
+      <div class="info-value" id="info-value">00:00</div>
+      <div class="level-bar-container">
+        <div class="level-bar" id="level-bar"></div>
+      </div>
+    </div>
+    <button class="settings-btn" id="settings-btn" title="Settings" style="position:relative">
+      <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.61 3.61 0 0112 15.6z"/></svg>
+      <div class="style-badge" id="style-badge"></div>
+    </button>
+    <button class="speak-btn" id="speak-btn" title="Speak clipboard (Ctrl+Shift+S)">
+      <svg class="speak-icon" id="speak-icon-svg" viewBox="0 0 24 24">
+        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+      </svg>
+      <svg class="stop-icon" id="stop-icon-svg" viewBox="0 0 24 24" style="display:none">
+        <rect x="6" y="6" width="12" height="12" rx="1"/>
+      </svg>
+    </button>
+    <button class="mic-btn idle" id="mic-btn" title="Click to record (Ctrl+Shift+Space)">
+      <svg class="mic-icon" id="mic-icon-svg" viewBox="0 0 24 24">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+      </svg>
+      <div class="spinner" id="spinner" style="display:none"></div>
+      <span class="checkmark" id="checkmark" style="display:none">✓</span>
+    </button>
+  </div>
+</div>
+
+<script>
+const FLASK_URL = 'http://localhost:5000';
+
+const micBtn = document.getElementById('mic-btn');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsPanel = document.getElementById('settings-panel');
+const styleBadge = document.getElementById('style-badge');
+const infoPanel = document.getElementById('info-panel');
+const infoLabel = document.getElementById('info-label');
+const infoValue = document.getElementById('info-value');
+const levelBar = document.getElementById('level-bar');
+const micIconSvg = document.getElementById('mic-icon-svg');
+const spinner = document.getElementById('spinner');
+const checkmark = document.getElementById('checkmark');
+
+let isRecording = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let startTime = null;
+let timerInterval = null;
+let audioContext = null;
+let analyser = null;
+let audioSource = null;
+let levelInterval = null;
+let selectedDeviceId = localStorage.getItem('selectedMicId') || null;
+let selectedStyle = localStorage.getItem('selectedStyle') || 'none';
+let selectedSttEngine = localStorage.getItem('selectedSttEngine') || 'gemini-3.5-transcribe';
+let pickerOpen = false;
+
+const speakBtn = document.getElementById('speak-btn');
+const speakIconSvg = document.getElementById('speak-icon-svg');
+const stopIconSvg = document.getElementById('stop-icon-svg');
+
+let isSpeaking = false;
+let isLoadingTTS = false;
+let ttsAudio = null;
+let ttsStream = null; // active Gemini PCM playback { ctx }
+let ttsAbort = null;
+let selectedTtsEngine = localStorage.getItem('selectedTtsEngine') || 'gemini';
+let selectedVoice = localStorage.getItem('selectedVoice') || 'alloy';
+let selectedGeminiVoice = localStorage.getItem('selectedGeminiVoice') || 'Kore';
+let selectedSpeechStyle = localStorage.getItem('selectedSpeechStyle') || 'none';
+
+const STYLES = [
+  { id: 'none', label: 'None (raw transcription)' },
+  { id: 'no-newlines', label: 'No new lines', local: true },
+  { id: 'clean', label: 'Clean up', geminiSmart: true, instruction: 'Remove filler words (um, uh, like, you know), fix grammar and punctuation. Keep the original meaning and tone.' },
+  { id: 'professional', label: 'Professional email', instruction: 'Transform this into a professional email with appropriate greeting and closing. Fix grammar and make it concise.' },
+  { id: 'bullet-points', label: 'Bullet points', instruction: 'Convert this into a well-organized bullet point list, grouping related ideas.' },
+  { id: 'emojify', label: 'Emojify', instruction: 'Add relevant emojis throughout the text to make it more expressive and fun. Keep all the original words.' },
+  { id: 'concise', label: 'Make concise', instruction: 'Shorten this text significantly while preserving the key meaning. Be direct and brief.' },
+];
+
+const VOICES = [
+  { id: 'alloy', label: 'Alloy' },
+  { id: 'ash', label: 'Ash' },
+  { id: 'ballad', label: 'Ballad' },
+  { id: 'cedar', label: 'Cedar' },
+  { id: 'coral', label: 'Coral' },
+  { id: 'echo', label: 'Echo' },
+  { id: 'fable', label: 'Fable' },
+  { id: 'marin', label: 'Marin' },
+  { id: 'nova', label: 'Nova' },
+  { id: 'onyx', label: 'Onyx' },
+  { id: 'sage', label: 'Sage' },
+  { id: 'shimmer', label: 'Shimmer' },
+  { id: 'verse', label: 'Verse' },
+];
+
+const STT_ENGINES = [
+  { id: 'gemini-3.5-transcribe', label: 'Gemini 3.5 Transcribe', provider: 'gemini' },
+  { id: 'gpt-transcribe', label: 'OpenAI gpt-transcribe', provider: 'openai' },
+  { id: 'gpt-4o-transcribe', label: 'OpenAI gpt-4o-transcribe', provider: 'openai' },
+];
+
+const TTS_ENGINES = [
+  { id: 'gemini', label: 'Gemini 3.8 Flash Lite TTS' },
+  { id: 'openai', label: 'OpenAI gpt-4o-mini-tts' },
+];
+
+const GEMINI_VOICES = [
+  'Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir', 'Leda', 'Orus', 'Aoede', 'Callirrhoe', 'Autonoe',
+  'Enceladus', 'Iapetus', 'Umbriel', 'Algieba', 'Despina', 'Erinome', 'Algenib', 'Rasalgethi', 'Laomedeia', 'Achernar',
+  'Alnilam', 'Schedar', 'Gacrux', 'Pulcherrima', 'Achird', 'Zubenelgenubi', 'Vindemiatrix', 'Sadachbia', 'Sadaltager', 'Sulafat',
+].map(name => ({ id: name, label: name }));
+
+const SPEECH_STYLES = [
+  { id: 'none', label: 'None (natural)', instruction: '' },
+  { id: 'news', label: 'News anchor', instruction: 'Speak in a clear, professional, authoritative tone like a news broadcaster. Measured pacing, confident delivery.' },
+  { id: 'casual', label: 'Casual & upbeat', instruction: 'Speak in a warm, friendly, conversational tone. Relaxed and upbeat, like chatting with a friend.' },
+  { id: 'poem', label: 'Poetry reading', instruction: 'Read with gentle rhythm and emotional depth, respecting line breaks and pauses. Thoughtful, expressive, slightly slower pace.' },
+  { id: 'story', label: 'Storytelling', instruction: 'Narrate like telling a captivating story. Vary pace and tone for engagement, with natural dramatic pauses.' },
+  { id: 'calm', label: 'Calm & slow', instruction: 'Speak slowly and calmly, with a soothing, meditative quality. Clear enunciation, generous pauses.' },
+];
+
+function applyLocalStyle(text, styleId) {
+  switch (styleId) {
+    case 'no-newlines':
+      return text.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    default:
+      return text;
+  }
+}
+
+// Notification sounds via AudioContext
+// We keep a persistent context and must await resume() before scheduling tones,
+// because Electron may suspend it until a user gesture has occurred.
+let toneCtx = null;
+
+async function playTone(freq, duration, type = 'sine', volume = 0.4) {
+  if (!toneCtx || toneCtx.state === 'closed') toneCtx = new AudioContext();
+  if (toneCtx.state === 'suspended') await toneCtx.resume();
+  const osc = toneCtx.createOscillator();
+  const gain = toneCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(volume, toneCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, toneCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(toneCtx.destination);
+  osc.start();
+  osc.stop(toneCtx.currentTime + duration);
+}
+
+async function dingStart() {
+  await playTone(880, 0.12);
+  setTimeout(() => playTone(1175, 0.15), 80);
+}
+
+async function dongStop() {
+  await playTone(785, 0.12);
+  setTimeout(() => playTone(590, 0.18), 80);
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60).toString().padStart(2, '0');
+  const s = Math.floor(sec % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function setState(state, message) {
+  micBtn.className = `mic-btn ${state}`;
+  micIconSvg.style.display = state === 'idle' || state === 'recording' ? '' : 'none';
+  spinner.style.display = state === 'transcribing' ? '' : 'none';
+  checkmark.style.display = state === 'success' ? '' : 'none';
+
+  if (state === 'recording') {
+    infoLabel.textContent = 'Recording';
+    infoPanel.classList.add('visible');
+  } else if (state === 'transcribing') {
+    infoLabel.textContent = 'Transcribing';
+    infoValue.textContent = message || '...';
+    levelBar.style.width = '0%';
+    infoPanel.classList.add('visible');
+  } else if (state === 'success') {
+    infoLabel.textContent = 'Done';
+    infoValue.textContent = message || 'Pasted!';
+    levelBar.style.width = '0%';
+    infoPanel.classList.add('visible');
+    setTimeout(() => setState('idle'), 2000);
+  } else if (state === 'error') {
+    infoLabel.textContent = 'Error';
+    infoValue.textContent = message || 'Failed';
+    levelBar.style.width = '0%';
+    infoPanel.classList.add('visible');
+    setTimeout(() => setState('idle'), 3000);
+  } else {
+    infoPanel.classList.remove('visible');
+  }
+}
+
+async function enumerateMics() {
+  try {
+    const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    tempStream.getTracks().forEach(t => t.stop());
+  } catch (e) { /* permission denied - labels will be empty */ }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices.filter(d => d.kind === 'audioinput');
+}
+
+function makeOption(label, isSelected, onClick) {
+  const btn = document.createElement('button');
+  btn.className = 'settings-option' + (isSelected ? ' selected' : '');
+  btn.innerHTML = `<span class="check">${isSelected ? '●' : ''}</span><span class="option-name" title="${label}">${label}</span>`;
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+async function renderSettingsPanel() {
+  settingsPanel.innerHTML = '';
+
+  // Style section
+  const styleHeader = document.createElement('div');
+  styleHeader.className = 'settings-section-header';
+  styleHeader.textContent = 'Output Style';
+  settingsPanel.appendChild(styleHeader);
+
+  STYLES.forEach(style => {
+    settingsPanel.appendChild(makeOption(style.label, style.id === selectedStyle, () => selectStyle(style.id)));
+  });
+
+  // Transcription engine section
+  const sttDivider = document.createElement('div');
+  sttDivider.className = 'settings-divider';
+  settingsPanel.appendChild(sttDivider);
+
+  const sttHeader = document.createElement('div');
+  sttHeader.className = 'settings-section-header';
+  sttHeader.textContent = 'Transcription';
+  settingsPanel.appendChild(sttHeader);
+
+  STT_ENGINES.forEach(engine => {
+    settingsPanel.appendChild(makeOption(engine.label, engine.id === selectedSttEngine, () => selectSttEngine(engine.id)));
+  });
+
+  // Divider
+  const divider = document.createElement('div');
+  divider.className = 'settings-divider';
+  settingsPanel.appendChild(divider);
+
+  // Mic section
+  const micHeader = document.createElement('div');
+  micHeader.className = 'settings-section-header';
+  micHeader.textContent = 'Microphone';
+  settingsPanel.appendChild(micHeader);
+
+  const mics = await enumerateMics();
+  if (mics.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'settings-option';
+    empty.innerHTML = '<span class="option-name">No microphones found</span>';
+    settingsPanel.appendChild(empty);
+  } else {
+    mics.forEach((mic, i) => {
+      const label = mic.label || `Microphone ${i + 1}`;
+      settingsPanel.appendChild(makeOption(label, mic.deviceId === selectedDeviceId, () => selectMic(mic.deviceId)));
+    });
+    if (!selectedDeviceId && mics.length > 0) {
+      const defaultMic = mics.find(m => m.deviceId === 'default') || mics[0];
+      selectedDeviceId = defaultMic.deviceId;
+      localStorage.setItem('selectedMicId', selectedDeviceId);
+    }
+  }
+
+  // TTS engine section
+  const engineDivider = document.createElement('div');
+  engineDivider.className = 'settings-divider';
+  settingsPanel.appendChild(engineDivider);
+
+  const engineHeader = document.createElement('div');
+  engineHeader.className = 'settings-section-header';
+  engineHeader.textContent = 'TTS Engine';
+  settingsPanel.appendChild(engineHeader);
+
+  TTS_ENGINES.forEach(engine => {
+    settingsPanel.appendChild(makeOption(engine.label, engine.id === selectedTtsEngine, () => selectTtsEngine(engine.id)));
+  });
+
+  // Voice section
+  const voiceDivider = document.createElement('div');
+  voiceDivider.className = 'settings-divider';
+  settingsPanel.appendChild(voiceDivider);
+
+  const voiceHeader = document.createElement('div');
+  voiceHeader.className = 'settings-section-header';
+  voiceHeader.textContent = 'TTS Voice';
+  settingsPanel.appendChild(voiceHeader);
+
+  const voices = selectedTtsEngine === 'gemini' ? GEMINI_VOICES : VOICES;
+  const currentVoice = currentTtsVoice();
+  voices.forEach(voice => {
+    settingsPanel.appendChild(makeOption(voice.label, voice.id === currentVoice, () => selectVoice(voice.id)));
+  });
+
+  // Speech style section
+  const speechDivider = document.createElement('div');
+  speechDivider.className = 'settings-divider';
+  settingsPanel.appendChild(speechDivider);
+
+  const speechHeader = document.createElement('div');
+  speechHeader.className = 'settings-section-header';
+  speechHeader.textContent = 'Speech Style';
+  settingsPanel.appendChild(speechHeader);
+
+  SPEECH_STYLES.forEach(style => {
+    settingsPanel.appendChild(makeOption(style.label, style.id === selectedSpeechStyle, () => selectSpeechStyle(style.id)));
+  });
+}
+
+function selectStyle(styleId) {
+  selectedStyle = styleId;
+  localStorage.setItem('selectedStyle', styleId);
+  styleBadge.classList.toggle('active', styleId !== 'none');
+  renderSettingsPanel();
+}
+
+function selectSttEngine(engineId) {
+  selectedSttEngine = engineId;
+  localStorage.setItem('selectedSttEngine', engineId);
+  renderSettingsPanel();
+}
+
+function selectSpeechStyle(styleId) {
+  selectedSpeechStyle = styleId;
+  localStorage.setItem('selectedSpeechStyle', styleId);
+  renderSettingsPanel();
+}
+
+function selectMic(deviceId) {
+  selectedDeviceId = deviceId;
+  localStorage.setItem('selectedMicId', deviceId);
+  renderSettingsPanel();
+}
+
+function togglePicker() {
+  pickerOpen = !pickerOpen;
+  if (pickerOpen) {
+    renderSettingsPanel();
+    settingsPanel.classList.add('open');
+    settingsBtn.classList.add('active');
+    window.electronAPI.resizeBubble(380, 620);
+  } else {
+    closePicker();
+  }
+}
+
+function closePicker() {
+  pickerOpen = false;
+  settingsPanel.classList.remove('open');
+  settingsBtn.classList.remove('active');
+  window.electronAPI.resizeBubble(320, 72);
+}
+
+async function startRecording() {
+  if (isSpeaking || isLoadingTTS) stopSpeaking();
+  if (pickerOpen) closePicker();
+  try {
+    const audioConstraints = {
+      sampleRate: 44100,
+      channelCount: 1,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false
+    };
+    if (selectedDeviceId) {
+      audioConstraints.deviceId = { exact: selectedDeviceId };
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: audioConstraints
+    });
+
+    audioChunks = [];
+    isRecording = true;
+    startTime = Date.now();
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+    mediaRecorder.onstop = async () => {
+      isRecording = false;
+      clearInterval(timerInterval);
+      stopLevelMeter();
+      stream.getTracks().forEach(t => t.stop());
+
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      await transcribe(blob);
+    };
+
+    mediaRecorder.start();
+    setState('recording');
+
+    // Play start ding after recorder is running — getUserMedia on Windows
+    // reconfigures the audio subsystem and kills playback in flight
+    setTimeout(() => dingStart(), 150);
+
+    timerInterval = setInterval(() => {
+      infoValue.textContent = formatTime((Date.now() - startTime) / 1000);
+    }, 200);
+
+    startLevelMeter(stream);
+  } catch (err) {
+    console.error('Mic error:', err);
+    setState('error', 'No mic');
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && isRecording) {
+    dongStop();
+    // Request a final data flush, then stop after a short delay
+    // to ensure the last chunk of audio is captured
+    if (mediaRecorder.state === 'recording') {
+      mediaRecorder.requestData();
+    }
+    setTimeout(() => {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+    }, 300);
+  }
+}
+
+let lastLevelValue = 0;
+
+function startLevelMeter(stream) {
+  try {
+    audioContext = new AudioContext();
+    audioSource = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.1;
+    analyser.minDecibels = -65;
+    analyser.maxDecibels = -15;
+    audioSource.connect(analyser);
+    lastLevelValue = 0;
+
+    const timeArray = new Uint8Array(analyser.fftSize);
+    const freqArray = new Uint8Array(analyser.frequencyBinCount);
+
+    levelInterval = setInterval(() => {
+      analyser.getByteTimeDomainData(timeArray);
+      analyser.getByteFrequencyData(freqArray);
+
+      // RMS from time domain — reliable volume indicator
+      let rms = 0;
+      for (let i = 0; i < timeArray.length; i++) {
+        const amp = (timeArray[i] - 128) / 128;
+        rms += amp * amp;
+      }
+      rms = Math.sqrt(rms / timeArray.length);
+
+      // Frequency average weighted toward speech range (bins ~5-40 out of 512)
+      let speechSum = 0;
+      const speechBins = Math.min(freqArray.length, 60);
+      for (let i = 3; i < speechBins; i++) {
+        speechSum += freqArray[i];
+      }
+      const speechAvg = speechSum / (speechBins - 3);
+
+      const combined = rms * 0.6 + (speechAvg / 255) * 0.4;
+
+      // Noise gate
+      if (combined < 0.008) {
+        lastLevelValue *= 0.85;
+      } else {
+        const scaled = Math.min(100, Math.pow(combined * 10, 0.4) * 100);
+        lastLevelValue = lastLevelValue * 0.6 + scaled * 0.4;
+      }
+
+      levelBar.style.width = `${Math.max(0, lastLevelValue)}%`;
+    }, 50);
+  } catch (e) {
+    console.error('Level meter error:', e);
+  }
+}
+
+function stopLevelMeter() {
+  clearInterval(levelInterval);
+  if (audioSource) audioSource.disconnect();
+  if (audioContext && audioContext.state !== 'closed') audioContext.close();
+  audioContext = null;
+  analyser = null;
+  audioSource = null;
+  levelBar.style.width = '0%';
+}
+
+async function fetchWithRetry(url, options, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const resp = await fetch(url, options);
+      if (resp.ok) return resp;
+      if (resp.status >= 400 && resp.status < 500) throw new Error(`HTTP ${resp.status}`);
+      throw new Error(`HTTP ${resp.status}`);
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      setState('transcribing', `Retry ${attempt}/${maxRetries - 1}...`);
+      await new Promise(r => setTimeout(r, 1000 * attempt));
+    }
+  }
+}
+
+async function transcribe(blob) {
+  setState('transcribing', 'Transcribing...');
+
+  try {
+    const engine = STT_ENGINES.find(e => e.id === selectedSttEngine) || STT_ENGINES[0];
+    const style = STYLES.find(s => s.id === selectedStyle);
+    // Gemini's smart mode does the cleanup itself, so we can skip the extra /transform round-trip
+    const useSmart = engine.provider === 'gemini' && style?.geminiSmart;
+
+    const formData = new FormData();
+    formData.append('audio', blob, 'recording.webm');
+    formData.append('model', engine.id);
+    formData.append('provider', engine.provider);
+    formData.append('mode', useSmart ? 'smart' : 'verbatim');
+    formData.append('style', '');
+
+    const resp = await fetchWithRetry(`${FLASK_URL}/transcribe`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await resp.json();
+    if (!result.success || !result.text) {
+      throw new Error(result.error || 'No text returned');
+    }
+
+    let finalText = result.text;
+
+    if (style && style.local) {
+      finalText = applyLocalStyle(finalText, style.id);
+    } else if (style && style.instruction && !useSmart) {
+      setState('transcribing', 'Styling...');
+
+      const transformResp = await fetchWithRetry(`${FLASK_URL}/transform`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: finalText,
+          style: selectedStyle,
+          instruction: style.instruction
+        })
+      });
+
+      const transformResult = await transformResp.json();
+      if (transformResult.success && transformResult.transformed_text) {
+        finalText = transformResult.transformed_text;
+      }
+    }
+
+    window.electronAPI.transcriptionComplete(finalText);
+    setState('success', truncate(finalText, 25));
+  } catch (err) {
+    console.error('Transcription error:', err);
+    setState('error', 'API error');
+  }
+}
+
+function truncate(str, len) {
+  return str.length > len ? str.slice(0, len) + '...' : str;
+}
+
+// ---- Text-to-Speech ----
+
+function setSpeakState(state) {
+  speakBtn.className = `speak-btn ${state}`;
+  speakIconSvg.style.display = state === 'speaking' ? 'none' : '';
+  stopIconSvg.style.display = state === 'speaking' ? '' : 'none';
+}
+
+async function speakText(text) {
+  if (isRecording) return;
+
+  if (!text || !text.trim()) {
+    infoLabel.textContent = 'Error';
+    infoValue.textContent = 'Empty clipboard';
+    infoPanel.classList.add('visible');
+    setTimeout(() => { if (!isSpeaking && !isLoadingTTS) infoPanel.classList.remove('visible'); }, 2000);
+    return;
+  }
+
+  isSpeaking = true;
+  isLoadingTTS = true;
+  setSpeakState('loading');
+  infoLabel.textContent = 'Loading TTS';
+  infoValue.textContent = truncate(text.trim(), 25);
+  infoPanel.classList.add('visible');
+
+  try {
+    const speechStyle = SPEECH_STYLES.find(s => s.id === selectedSpeechStyle);
+    const instruction = speechStyle?.instruction || '';
+
+    const engine = selectedTtsEngine;
+    ttsAbort = new AbortController();
+    const resp = await fetch(`${FLASK_URL}/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.trim(), voice: currentTtsVoice(), instruction, provider: engine }),
+      signal: ttsAbort.signal
+    });
+
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${resp.status}`);
+    }
+    if (!isSpeaking) return; // cancelled during fetch
+
+    if (engine === 'gemini') {
+      await playPcmStream(resp);
+      return;
+    }
+
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+
+    ttsAudio = new Audio(url);
+    ttsAudio.onended = () => { URL.revokeObjectURL(url); finishSpeaking(); };
+    ttsAudio.onerror = () => {
+      URL.revokeObjectURL(url);
+      finishSpeaking();
+      infoLabel.textContent = 'Error';
+      infoValue.textContent = 'Audio error';
+      infoPanel.classList.add('visible');
+      setTimeout(() => { if (!isSpeaking) infoPanel.classList.remove('visible'); }, 2000);
+    };
+
+    isLoadingTTS = false;
+    if (!isSpeaking) { URL.revokeObjectURL(url); return; } // cancelled during blob read
+
+    setSpeakState('speaking');
+    infoLabel.textContent = 'Speaking';
+    await ttsAudio.play();
+  } catch (err) {
+    if (err.name === 'AbortError') return; // user stopped
+    console.error('TTS error:', err);
+    closeTtsStream();
+    finishSpeaking();
+    infoLabel.textContent = 'TTS failed';
+    infoValue.textContent = truncate(err.message || 'Unknown error', 25);
+    infoPanel.classList.add('visible');
+    setTimeout(() => { if (!isSpeaking) infoPanel.classList.remove('visible'); }, 2000);
+  }
+}
+
+// Plays streamed raw PCM (16-bit LE mono) as chunks arrive, scheduling them back-to-back
+async function playPcmStream(resp) {
+  const sampleRate = Number(resp.headers.get('X-Sample-Rate')) || 24000;
+  const ctx = new AudioContext({ sampleRate });
+  if (ctx.state === 'suspended') await ctx.resume();
+  const stream = { ctx };
+  ttsStream = stream;
+
+  const reader = resp.body.getReader();
+  const PREBUFFER = 0.1; // seconds of headroom before the first chunk plays
+  let nextTime = 0;
+  let started = false;
+  let leftover = null; // odd trailing byte split across network chunks
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (ttsStream !== stream) return; // stopped meanwhile
+    if (done) break;
+
+    let bytes = value;
+    if (leftover) {
+      bytes = new Uint8Array(leftover.length + value.length);
+      bytes.set(leftover);
+      bytes.set(value, leftover.length);
+    }
+    const usable = bytes.length - (bytes.length % 2);
+    leftover = usable < bytes.length ? bytes.slice(usable) : null;
+    if (!usable) continue;
+
+    const samples = new Int16Array(bytes.slice(0, usable).buffer);
+    const buffer = ctx.createBuffer(1, samples.length, sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+
+    if (!started) {
+      started = true;
+      isLoadingTTS = false;
+      setSpeakState('speaking');
+      infoLabel.textContent = 'Speaking';
+      nextTime = ctx.currentTime + PREBUFFER;
+    }
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    nextTime = Math.max(nextTime, ctx.currentTime); // if the network fell behind, resume immediately
+    src.start(nextTime);
+    nextTime += buffer.duration;
+  }
+
+  if (!started) throw new Error('No audio received');
+
+  // Stream finished downloading; wait for the scheduled audio to play out. ctx.currentTime runs ahead
+  // of what's audible by the output latency, so add that plus a margin or the last word gets clipped.
+  const latency = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
+  const remainingMs = (Math.max(0, nextTime - ctx.currentTime) + latency) * 1000;
+  setTimeout(() => {
+    if (ttsStream !== stream) return;
+    closeTtsStream();
+    finishSpeaking();
+  }, remainingMs + 300);
+}
+
+function closeTtsStream() {
+  if (ttsAbort) { ttsAbort.abort(); ttsAbort = null; }
+  if (ttsStream) { ttsStream.ctx.close(); ttsStream = null; }
+}
+
+function stopSpeaking() {
+  isSpeaking = false;
+  isLoadingTTS = false;
+  closeTtsStream();
+  if (ttsAudio) {
+    ttsAudio.pause();
+    ttsAudio.currentTime = 0;
+    ttsAudio = null;
+  }
+  setSpeakState('idle');
+  infoPanel.classList.remove('visible');
+}
+
+function finishSpeaking() {
+  isSpeaking = false;
+  isLoadingTTS = false;
+  setSpeakState('idle');
+  infoPanel.classList.remove('visible');
+}
+
+function currentTtsVoice() {
+  return selectedTtsEngine === 'gemini' ? selectedGeminiVoice : selectedVoice;
+}
+
+function selectTtsEngine(engineId) {
+  selectedTtsEngine = engineId;
+  localStorage.setItem('selectedTtsEngine', engineId);
+  renderSettingsPanel();
+}
+
+function selectVoice(voiceId) {
+  if (selectedTtsEngine === 'gemini') {
+    selectedGeminiVoice = voiceId;
+    localStorage.setItem('selectedGeminiVoice', voiceId);
+  } else {
+    selectedVoice = voiceId;
+    localStorage.setItem('selectedVoice', voiceId);
+  }
+  renderSettingsPanel();
+}
+
+function toggle() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+micBtn.addEventListener('click', toggle);
+settingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  togglePicker();
+});
+
+document.addEventListener('click', (e) => {
+  if (pickerOpen && !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
+    closePicker();
+  }
+});
+
+speakBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (isSpeaking || isLoadingTTS) {
+    stopSpeaking();
+    return;
+  }
+  const text = await window.electronAPI.getClipboardText();
+  speakText(text);
+});
+
+// Listen for global hotkey toggle from main process
+window.electronAPI.onToggleRecording(() => toggle());
+
+// Listen for speak-clipboard from main process (Ctrl+Shift+S)
+window.electronAPI.onSpeakClipboard((text) => {
+  if (isSpeaking || isLoadingTTS) {
+    stopSpeaking();
+    return;
+  }
+  speakText(text);
+});
+
+// Init: show style badge if a style was previously selected, pre-enumerate mics
+styleBadge.classList.toggle('active', selectedStyle !== 'none');
+enumerateMics();
+</script>
+</body>
+</html>

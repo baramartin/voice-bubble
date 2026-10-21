@@ -1,0 +1,13 @@
+{
+  "name": "whisper-dictation",
+  "version": "1.0.0",
+  "description": "Floating dictation bubble - type anywhere with your voice",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "flask": "python app.py"
+  },
+  "dependencies": {
+    "electron": "^35.0.0"
+  }
+}
