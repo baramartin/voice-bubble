@@ -1,7 +1,7 @@
 {
   "name": "voice-bubble",
   "version": "1.0.0",
-  "description": "Floating voice bubble for Windows: dictate into any app and have any text read aloud (Gemini / OpenAI)",
+  "description": "Floating voice bubble for Windows: dictate into any app and have any text read aloud. Bring your own Gemini or OpenAI key.",
   "main": "main.js",
   "license": "MIT",
   "scripts": {

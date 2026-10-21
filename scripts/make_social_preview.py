@@ -29,11 +29,21 @@ def main():
     draw = ImageDraw.Draw(image)
     x = 380
     draw.text((x, 170), 'Voice Bubble', font=font('segoeuib.ttf', 92), fill=TEXT)
-    draw.text((x, 300), 'Type anywhere with your voice.', font=font('seguisb.ttf', 40), fill=TEXT)
-    draw.text((x, 352), 'Have any text read aloud.', font=font('seguisb.ttf', 40), fill=TEXT)
-    draw.text((x, 440), 'Gemini or OpenAI  ·  smart cleanup  ·  30 voices  ·  free & open source',
+    draw.text((x, 290), 'Type anywhere with your voice.', font=font('seguisb.ttf', 40), fill=TEXT)
+    draw.text((x, 342), 'Have any text read aloud.', font=font('seguisb.ttf', 40), fill=TEXT)
+
+    # "Bring your own key" pill: the first thing to know before trying it
+    pill_font = font('seguisb.ttf', 26)
+    pill_text = 'Bring your own key: Gemini (free tier) or OpenAI'
+    left, top, right, bottom = draw.textbbox((0, 0), pill_text, font=pill_font)
+    pad_x, pad_y, pill_y = 22, 12, 425
+    draw.rounded_rectangle((x, pill_y, x + right - left + 2 * pad_x, pill_y + bottom - top + 2 * pad_y + 4),
+                           radius=26, fill=(60, 58, 110), outline=ACCENT, width=2)
+    draw.text((x + pad_x - left, pill_y + pad_y - top + 2), pill_text, font=pill_font, fill=TEXT)
+
+    draw.text((x, 505), 'Free & open source  ·  smart cleanup  ·  30 voices  ·  Windows',
               font=font('segoeui.ttf', 26), fill=MUTED)
-    draw.text((x, 485), 'Windows  ·  github.com/baramartin/voice-bubble', font=font('segoeui.ttf', 26), fill=ACCENT)
+    draw.text((x, 548), 'github.com/baramartin/voice-bubble', font=font('segoeui.ttf', 26), fill=ACCENT)
 
     out = os.path.join(ROOT, 'docs', 'social-preview.png')
     os.makedirs(os.path.dirname(out), exist_ok=True)

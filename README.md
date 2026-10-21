@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  🔑 <b>Bring your own API key</b>: Google Gemini (has a free tier) or OpenAI. No account, no subscription, you pay the provider directly.
+</p>
+
+<p align="center">
   <img src="docs/demo.gif" width="420" alt="Voice Bubble: recording, transcribing, then pasting the text">
 </p>
 
