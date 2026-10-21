@@ -40,7 +40,7 @@ function captureTargetWindow() {
     ? ['powershell', ['-NoProfile', '-Command', PS_GET_HWND]]
     : ['xdotool', ['getactivewindow']];
   return new Promise((resolve) => {
-    execFile(command, args, (err, stdout) => {
+    execFile(command, args, { windowsHide: true }, (err, stdout) => {
       captureInFlight = false;
       if (!err && stdout.trim()) {
         const handle = stdout.trim();
@@ -92,7 +92,7 @@ Add-Type -AssemblyName System.Windows.Forms
 `.trim();
 
   return new Promise((resolve) => {
-    execFile('powershell', ['-NoProfile', '-Command', psScript], (err, stdout, stderr) => {
+    execFile('powershell', ['-NoProfile', '-Command', psScript], { windowsHide: true }, (err, stdout, stderr) => {
       if (err) console.error(`Send keys ${keys} failed:`, err.message, stderr);
       resolve(!err);
     });
@@ -101,7 +101,7 @@ Add-Type -AssemblyName System.Windows.Forms
 
 function runCommand(command, args) {
   return new Promise((resolve) => {
-    execFile(command, args, (err, stdout, stderr) => {
+    execFile(command, args, { windowsHide: true }, (err, stdout, stderr) => {
       if (err) console.error(`${command} failed:`, err.message, stderr);
       resolve(!err);
     });
@@ -133,6 +133,7 @@ async function pasteToTargetWindow() {
 function startFlask() {
   flaskProcess = spawn(PYTHON, ['app.py'], {
     cwd: __dirname,
+    windowsHide: true, // no console window when started from a desktop shortcut
     stdio: ['pipe', 'pipe', 'pipe']
   });
   flaskProcess.stdout.on('data', (d) => process.stdout.write(`[Flask] ${d}`));
@@ -203,6 +204,21 @@ function createTray() {
   ]));
 }
 
+// A second launch (e.g. double-clicking the shortcut again) just quits; the bubble is already running
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+app.on('second-instance', () => bubbleWindow?.show());
+
+// globalShortcut.register returns false when another app already owns the combination
+const failedHotkeys = [];
+function registerHotkey(accelerator, handler) {
+  if (!globalShortcut.register(accelerator, handler)) {
+    console.error(`Hotkey ${accelerator} is already used by another app`);
+    failedHotkeys.push(accelerator);
+  }
+}
+
 app.whenReady().then(() => {
   if (IS_MAC) app.dock?.hide(); // live in the menu bar only, like skipTaskbar on Windows
   startFlask();
@@ -212,13 +228,13 @@ app.whenReady().then(() => {
   try { createTray(); } catch (e) { console.log('Tray icon not found, skipping tray'); }
 
   // Global hotkey: Ctrl+Shift+Space to toggle recording
-  globalShortcut.register('Ctrl+Shift+Space', async () => {
+  registerHotkey('Ctrl+Shift+Space', async () => {
     await captureTargetWindow();
     bubbleWindow.webContents.send('toggle-recording');
   });
 
   // Global hotkey: Ctrl+Shift+S to speak selection/clipboard aloud (or stop if already speaking)
-  globalShortcut.register('Ctrl+Shift+S', async () => {
+  registerHotkey('Ctrl+Shift+S', async () => {
     // First, copy the selection from the target window (Ctrl+C / Cmd+C)
     if (await sendShortcutToTarget('c')) {
       // Small delay for clipboard to update
@@ -227,6 +243,9 @@ app.whenReady().then(() => {
     const text = clipboard.readText();
     bubbleWindow.webContents.send('speak-clipboard', text || '');
   });
+
+  // IPC: hotkeys that another app already owns, so the bubble can say so
+  ipcMain.handle('get-hotkey-conflicts', () => failedHotkeys);
 
   // IPC: read clipboard text (for renderer button clicks)
   ipcMain.handle('get-clipboard-text', () => clipboard.readText());

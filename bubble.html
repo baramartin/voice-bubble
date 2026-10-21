@@ -1431,10 +1431,22 @@ function updateStyleBadge() {
   settingsBtn.title = `Settings (style: ${style ? style.label : 'Raw'})`;
 }
 
+// Another app may already own one of our global hotkeys; say so instead of failing silently
+async function showHotkeyConflicts() {
+  const taken = await window.electronAPI.getHotkeyConflicts();
+  if (!taken.length) return;
+  infoLabel.textContent = 'Hotkey in use'; // by another app; longer labels get cut off
+  infoValue.title = 'Another app already uses this shortcut, so Voice Bubble could not register it.';
+  infoValue.textContent = taken.join(', ');
+  infoPanel.classList.add('visible');
+  setTimeout(() => { if (!isRecording && !isSpeaking && !isLoadingTTS) infoPanel.classList.remove('visible'); }, 8000);
+}
+
 // Init: style badge, pre-enumerate mics, then load provider info and defaults
 updateStyleBadge();
 enumerateMics();
 loadConfig();
+showHotkeyConflicts();
 </script>
 </body>
 </html>

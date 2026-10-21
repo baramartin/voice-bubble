@@ -448,6 +448,57 @@ def step_install():
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             warn(f'{label} failed to install: {e}')
 
+SHORTCUT_NAME = 'Voice Bubble.lnk'
+ELECTRON_EXE = os.path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
+
+def powershell(script, **env):
+    """Run a PowerShell snippet. Values go in as environment variables ($env:NAME) to avoid quoting issues."""
+    result = subprocess.run(['powershell', '-NoProfile', '-Command', script], capture_output=True, text=True,
+                            env={**os.environ, **env}, check=True)
+    return result.stdout.strip()
+
+def create_shortcut(path):
+    # Launches electron.exe directly (no console window); the app folder is its argument
+    powershell(
+        '$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:VB_LNK);'
+        '$s.TargetPath = $env:VB_TARGET; $s.Arguments = \'"\' + $env:VB_ROOT + \'"\';'
+        '$s.WorkingDirectory = $env:VB_ROOT; $s.IconLocation = $env:VB_ICON;'
+        '$s.Description = "Voice Bubble: dictate anywhere"; $s.Save()',
+        VB_LNK=path, VB_TARGET=ELECTRON_EXE, VB_ROOT=ROOT, VB_ICON=os.path.join(ROOT, 'static', 'icon.ico'))
+
+def step_shortcuts():
+    """Windows: desktop shortcut and start-with-Windows, each detected if already there."""
+    if os.name != 'nt':
+        return
+    if not os.path.exists(ELECTRON_EXE):
+        warn('Electron is not installed yet, so no shortcuts were created. Run the setup again after `npm install`.')
+        return
+    places = [
+        ('Desktop', 'Desktop shortcut', 'Create a desktop shortcut?', True),
+        ('Startup', 'Start with Windows', 'Start Voice Bubble automatically when you sign in to Windows?', False),
+    ]
+    for folder_name, label, question, default in places:
+        # GetFolderPath follows redirected folders, e.g. a Desktop that lives in OneDrive
+        folder = powershell(f"[Environment]::GetFolderPath('{folder_name}')")
+        path = os.path.join(folder, SHORTCUT_NAME)
+        print()
+        if os.path.exists(path):
+            print(f'{BOLD}{label}{RESET}: already set up.')
+            action = choose(label, ['Keep it', 'Update it', 'Remove it'], 0)
+            if action == 2:
+                os.remove(path)
+                ok(f'{label} removed')
+                continue
+            if action == 0:
+                continue
+        elif not ask_yes_no(question, default):
+            continue
+        try:
+            create_shortcut(path)
+            ok(f'{label}: {path}')
+        except subprocess.CalledProcessError as e:
+            warn(f'Could not create the shortcut: {e.stderr.strip() or e}')
+
 def main():
     env = read_env()
     keys = step_keys(env)
@@ -477,7 +528,9 @@ def main():
     print(f"{DIM}   You can switch engines and voices anytime in the bubble's settings.{RESET}\n")
 
     step_install()
-    print(f'\n{BOLD}Done!{RESET} Start Voice Bubble with: {CYAN}npm start{RESET}')
+    step_shortcuts()
+    start_hint = 'the desktop shortcut or ' if os.name == 'nt' else ''
+    print(f'\n{BOLD}Done!{RESET} Start Voice Bubble with {start_hint}{CYAN}npm start{RESET}')
     print('Hotkeys: Ctrl+Shift+Space to dictate, Ctrl+Shift+S to read the selection aloud.')
 
 if __name__ == '__main__':

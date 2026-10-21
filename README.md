@@ -53,8 +53,9 @@ The setup wizard walks you through these steps (arrow keys to move, Enter to sel
 5. **Voice**: press `P` to hear the highlighted voice before you pick it
 6. **Custom vocabulary** (Gemini only): names or jargon it should recognize
 7. **Installing dependencies** (`pip` + `npm`)
+8. **Shortcuts** (Windows): a desktop shortcut and, if you like, starting with Windows
 
-It writes a `.env` file. Run it again anytime to change your choices; your current values are kept as defaults.
+It writes a `.env` file. Run it again anytime to change your choices; your current values are kept as defaults. Everything except the API keys can also be changed later in the bubble's settings.
 
 ## Usage
 
@@ -64,6 +65,9 @@ It writes a `.env` file. Run it again anytime to change your choices; your curre
 | Read selected text aloud | `Ctrl+Shift+S` (copies the selection, then speaks it; press again to stop) |
 | Read the clipboard aloud | Click the speaker button |
 | Change style, engine, mic or voice | Click the settings button on the bubble (the Help tab lists all of this too) |
+| Hear a voice | Click it in Settings → Read aloud |
+
+The hotkeys are global, so they take over these combinations in every app (for example, `Ctrl+Shift+S` is "Save As" in many editors). If another app already owns one of them, the bubble tells you on startup.
 
 ## Pricing
 

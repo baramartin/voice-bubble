@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resizeBubble: (width, height) => ipcRenderer.invoke('resize-bubble', { width, height }),
   onWindowBlur: (callback) => ipcRenderer.on('window-blur', callback),
   getClipboardText: () => ipcRenderer.invoke('get-clipboard-text'),
+  getHotkeyConflicts: () => ipcRenderer.invoke('get-hotkey-conflicts'),
   onSpeakClipboard: (callback) => ipcRenderer.on('speak-clipboard', (_event, text) => callback(text))
 });
