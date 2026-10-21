@@ -369,14 +369,29 @@
   .settings-option .check {
     width: 16px;
     flex-shrink: 0;
+    align-self: flex-start;
+    line-height: 17px;
     text-align: center;
     font-size: 12px;
+  }
+
+  .settings-option .option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
   }
 
   .settings-option .option-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .settings-option .option-desc {
+    font-size: 11px;
+    line-height: 1.35;
+    color: rgba(255,255,255,0.4);
   }
 
   .style-badge {
@@ -518,7 +533,7 @@ let analyser = null;
 let audioSource = null;
 let levelInterval = null;
 let selectedDeviceId = localStorage.getItem('selectedMicId') || null;
-let selectedStyle = localStorage.getItem('selectedStyle') || 'none';
+let selectedStyle = localStorage.getItem('selectedStyle') || 'clean';
 let selectedSttEngine = localStorage.getItem('selectedSttEngine') || 'gemini-3.5-transcribe';
 let providers = { openai: true, gemini: true }; // replaced by /config on startup
 let pickerOpen = false;
@@ -537,14 +552,22 @@ let selectedVoice = localStorage.getItem('selectedVoice') || 'alloy';
 let selectedGeminiVoice = localStorage.getItem('selectedGeminiVoice') || 'Kore';
 let selectedSpeechStyle = localStorage.getItem('selectedSpeechStyle') || 'none';
 
+// 'clean' keeps its id so saved selections survive the rename to "Smart mode".
+// With Gemini it uses Gemini's built-in smart transcription; with OpenAI the instruction below does the same job.
 const STYLES = [
-  { id: 'none', label: 'None (raw transcription)' },
-  { id: 'no-newlines', label: 'No new lines', local: true },
-  { id: 'clean', label: 'Clean up', geminiSmart: true, instruction: 'Remove filler words (um, uh, like, you know), fix grammar and punctuation. Keep the original meaning and tone.' },
-  { id: 'professional', label: 'Professional email', instruction: 'Transform this into a professional email with appropriate greeting and closing. Fix grammar and make it concise.' },
-  { id: 'bullet-points', label: 'Bullet points', instruction: 'Convert this into a well-organized bullet point list, grouping related ideas.' },
-  { id: 'emojify', label: 'Emojify', instruction: 'Add relevant emojis throughout the text to make it more expressive and fun. Keep all the original words.' },
-  { id: 'concise', label: 'Make concise', instruction: 'Shorten this text significantly while preserving the key meaning. Be direct and brief.' },
+  { id: 'clean', label: 'Smart mode', geminiSmart: true,
+    desc: 'Removes ums and false starts, keeps only your corrections ("Tuesday, no, Wednesday" becomes "Wednesday") and turns spoken lists into real lists.',
+    instruction: 'Remove filler words (um, uh, like, you know), stutters and false starts. When the speaker corrects themselves (e.g. "Tuesday, actually no, Wednesday"), keep only the correction. Format spoken lists as lists. Fix grammar and punctuation. Keep the original meaning, tone and language.' },
+  { id: 'none', label: 'Raw', desc: 'Exactly what you said, word for word, including ums.' },
+  { id: 'no-newlines', label: 'No new lines', local: true, desc: 'Raw text joined into one line. Handy for chat boxes where Enter sends.' },
+  { id: 'professional', label: 'Professional email', desc: 'Rewritten as a polished email with greeting and sign-off.',
+    instruction: 'Transform this into a professional email with appropriate greeting and closing. Fix grammar and make it concise.' },
+  { id: 'bullet-points', label: 'Bullet points', desc: 'Your ideas grouped into a tidy bullet list.',
+    instruction: 'Convert this into a well-organized bullet point list, grouping related ideas.' },
+  { id: 'emojify', label: 'Emojify', desc: 'Your words, plus fitting emojis.',
+    instruction: 'Add relevant emojis throughout the text to make it more expressive and fun. Keep all the original words.' },
+  { id: 'concise', label: 'Make concise', desc: 'Shortened to the key points.',
+    instruction: 'Shorten this text significantly while preserving the key meaning. Be direct and brief.' },
 ];
 
 const VOICES = [
@@ -683,10 +706,19 @@ async function enumerateMics() {
   return mics;
 }
 
-function makeOption(label, isSelected, onClick) {
+function makeOption(label, isSelected, onClick, desc) {
   const btn = document.createElement('button');
   btn.className = 'settings-option' + (isSelected ? ' selected' : '');
-  btn.innerHTML = `<span class="check">${isSelected ? '●' : ''}</span><span class="option-name" title="${label}">${label}</span>`;
+  btn.innerHTML = `<span class="check">${isSelected ? '●' : ''}</span><span class="option-text"><span class="option-name"></span></span>`;
+  const name = btn.querySelector('.option-name');
+  name.textContent = label;
+  name.title = label;
+  if (desc) {
+    const descEl = document.createElement('span');
+    descEl.className = 'option-desc';
+    descEl.textContent = desc;
+    btn.querySelector('.option-text').appendChild(descEl);
+  }
   btn.addEventListener('click', onClick);
   return btn;
 }
@@ -733,9 +765,9 @@ function makeVoiceChip(voice, isSelected) {
 }
 
 async function renderDictationTab(body) {
-  addSection(body, 'Output style', 'Applied to the transcript before pasting. "Clean up" with Gemini uses its built-in smart mode.');
+  addSection(body, 'Output style', 'What happens to your words before they are pasted.');
   STYLES.forEach(style => {
-    body.appendChild(makeOption(style.label, style.id === selectedStyle, () => selectStyle(style.id)));
+    body.appendChild(makeOption(style.label, style.id === selectedStyle, () => selectStyle(style.id), style.desc));
   });
 
   addSection(body, 'Transcription engine', 'Gemini has the best cleanup; OpenAI is a bit faster.');
@@ -787,7 +819,7 @@ function renderHelpTab(body) {
   const items = [
     ['Dictate', '<kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Space</kbd> or click the mic. Press again to stop; the text is pasted into the window you were using.'],
     ['Read aloud', 'Select text anywhere and press <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd>. Press it again to stop. The speaker button reads the clipboard.'],
-    ['Styles', 'Pick an output style under Dictation to clean up, reformat or rewrite what you said before it\'s pasted. A dot on the settings button means a style is active.'],
+    ['Styles', 'Smart mode (the default) tidies up what you said. Other styles reformat or rewrite it, and Raw pastes it word for word. A dot on the settings button means a style other than Raw is active.'],
     ['Move the bubble', 'Drag it by its dark background.'],
     ['API keys', 'To add or change keys, run <kbd>npm run setup</kbd> in the app folder and restart.'],
     ['Close this panel', 'Click anywhere outside it or press <kbd>Esc</kbd>.'],
@@ -1076,8 +1108,8 @@ async function transcribe(blob) {
       }
     }
 
-    window.electronAPI.transcriptionComplete(finalText);
-    setState('success', truncate(finalText, 25));
+    const pasted = await window.electronAPI.transcriptionComplete(finalText);
+    setState('success', pasted ? truncate(finalText, 25) : 'Copied, paste it');
   } catch (err) {
     console.error('Transcription error:', err);
     setState('error', 'API error');
@@ -1338,6 +1370,10 @@ async function loadConfig() {
       const config = await (await fetch(`${FLASK_URL}/config`)).json();
       providers = config.providers;
       const d = config.defaults;
+      if (!localStorage.getItem('selectedStyle') && STYLES.some(s => s.id === d.style)) {
+        selectedStyle = d.style;
+        styleBadge.classList.toggle('active', selectedStyle !== 'none');
+      }
       if (!localStorage.getItem('selectedSttEngine')) selectedSttEngine = d.stt_engine;
       if (!localStorage.getItem('selectedTtsEngine')) selectedTtsEngine = d.tts_engine;
       if (d.tts_engine === 'gemini' && !localStorage.getItem('selectedGeminiVoice')) selectedGeminiVoice = d.tts_voice;

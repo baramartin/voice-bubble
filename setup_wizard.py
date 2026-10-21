@@ -4,11 +4,13 @@ Run with `npm run setup` or `python setup_wizard.py`. Uses only the standard lib
 so it works before `pip install` has run. Re-running it keeps your current values as defaults.
 """
 import base64
-import getpass
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
+import textwrap
 import urllib.error
 import urllib.request
 
@@ -49,13 +51,27 @@ GEMINI_VOICES = [
 OPENAI_VOICES = [(v, '') for v in
                  ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'fable', 'marin', 'nova', 'onyx', 'sage', 'shimmer', 'verse']]
 
+# Output styles: (bubble style id, label, description). Keep in sync with STYLES in bubble.html.
+STYLES = [
+    ('clean', 'Smart mode', 'Removes ums and false starts, keeps only your corrections ("Tuesday, no, Wednesday" -> '
+                            '"Wednesday") and turns spoken lists into real lists. Recommended.'),
+    ('none', 'Raw', 'Exactly what you said, word for word, including ums.'),
+    ('no-newlines', 'No new lines', 'Raw text joined into one line. Handy for chat boxes where Enter sends.'),
+    ('professional', 'Professional email', 'Rewritten as a polished email with greeting and sign-off.'),
+    ('bullet-points', 'Bullet points', 'Your ideas grouped into a tidy bullet list.'),
+    ('emojify', 'Emojify', 'Your words, plus fitting emojis.'),
+    ('concise', 'Make concise', 'Shortened to the key points.'),
+]
+
+KEY_PREFIXES = {'gemini': 'AIza', 'openai': 'sk-'}
+
 # ---- Console helpers ----
 
 os.system('')  # enables ANSI colors in older Windows consoles
 BOLD, DIM, GREEN, YELLOW, RED, CYAN, RESET = '\033[1m', '\033[2m', '\033[32m', '\033[33m', '\033[31m', '\033[36m', '\033[0m'
 # Arrow-key menus need a real terminal; piped input falls back to numbered menus
 INTERACTIVE = sys.stdin.isatty() and sys.stdout.isatty()
-STEPS = ['Keys', 'Dictation', 'Read aloud', 'Voice', 'Vocabulary', 'Finish']
+STEPS = ['Keys', 'Dictation', 'Style', 'Read aloud', 'Voice', 'Vocabulary', 'Finish']
 
 def screen(step):
     """Clear the terminal and show the title plus a breadcrumb of the steps."""
@@ -93,6 +109,43 @@ def read_key():
         raise KeyboardInterrupt
     return 'enter' if ch in ('\r', '\n') else ch.lower()
 
+def masked_input(prompt):
+    """Like input(), but shows * for each character so you can see typing and pasting worked."""
+    if not INTERACTIVE:
+        return input(prompt)
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    chars = []
+    while True:
+        if os.name == 'nt':
+            import msvcrt
+            ch = msvcrt.getwch()
+            if ch in ('\x00', '\xe0'):  # ignore arrow/function keys
+                msvcrt.getwch()
+                continue
+        else:
+            import termios, tty
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                ch = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        if ch in ('\r', '\n'):
+            sys.stdout.write('\n')
+            return ''.join(chars)
+        if ch == '\x03':
+            raise KeyboardInterrupt
+        if ch in ('\x08', '\x7f'):  # backspace
+            if chars:
+                chars.pop()
+                sys.stdout.write('\b \b')
+        elif ch.isprintable():
+            chars.append(ch)
+            sys.stdout.write('*')
+        sys.stdout.flush()
+
 def choose(prompt, labels, default_index=0, details=None, on_preview=None):
     """Menu returning the chosen index. Arrow keys + Enter in a terminal; details[i] is shown for the
     highlighted option. on_preview(i) is called on P and returns a status message."""
@@ -110,12 +163,16 @@ def choose(prompt, labels, default_index=0, details=None, on_preview=None):
             lines.append(f'{CYAN}> {labels[i]}{RESET}' if i == index else f'  {labels[i]}')
         below = len(labels) - top - rows
         lines.append(f'  {DIM}v {below} more{RESET}' if below > 0 else '')
-        lines.append(f'  {DIM}{details[index]}{RESET}' if details and details[index] else '')
+        # Wrap the description ourselves: a line the terminal wraps would throw off the in-place redraw
+        width = max(20, shutil.get_terminal_size().columns - 4)
+        detail = textwrap.wrap(details[index], width) if details and details[index] else ['']
+        lines += [f'  {DIM}{line}{RESET}' for line in detail]
         lines.append(status)
 
         if drawn:
             sys.stdout.write(f'\033[{drawn}F')  # back to the top of the menu and redraw in place
-        sys.stdout.write(''.join(f'\033[2K{line}\n' for line in lines))
+        # \033[J clears leftovers when this frame is shorter than the previous one
+        sys.stdout.write(''.join(f'\033[2K{line}\n' for line in lines) + '\033[J')
         sys.stdout.flush()
         drawn = len(lines)
 
@@ -234,44 +291,84 @@ def synthesize_wav(engine, gemini_model, voice, keys):
     return http('https://api.openai.com/v1/audio/speech', {'Authorization': f"Bearer {keys['openai']}"},
                 {'model': 'gpt-4o-mini-tts', 'voice': voice, 'input': text, 'response_format': 'wav'}, timeout=60)
 
+def audio_player():
+    """Command that plays a WAV file on this system (None on Windows, which uses winsound)."""
+    if sys.platform == 'darwin':
+        return ['afplay']
+    for player in (['paplay'], ['aplay', '-q']):
+        if shutil.which(player[0]):
+            return player
+    return None
+
+def can_play_audio():
+    return os.name == 'nt' or audio_player() is not None
+
 def play_wav(wav_bytes):
-    import winsound
-    winsound.PlaySound(wav_bytes, winsound.SND_MEMORY)
+    if os.name == 'nt':
+        import winsound
+        winsound.PlaySound(wav_bytes, winsound.SND_MEMORY)
+        return
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+        f.write(wav_bytes)
+    try:
+        subprocess.run(audio_player() + [f.name], check=True)
+    finally:
+        os.unlink(f.name)
 
 # ---- Wizard steps ----
 
 def step_keys(env):
     screen('Keys')
+    if sys.platform != 'win32':
+        warn('Voice Bubble is built for Windows; macOS and Linux support is experimental.\n')
     print('You need at least one key. Either provider alone covers dictation and read-aloud.\n')
     print(f'  Gemini: https://aistudio.google.com/apikey  {DIM}(free tier; free-tier data may be used by Google){RESET}')
     print(f'  OpenAI: https://platform.openai.com/api-keys  {DIM}(optional){RESET}\n')
-    print(f'{DIM}Keys stay hidden while you paste them (right-click or Ctrl+V), then press Enter.{RESET}\n')
+    print(f'{DIM}Paste with right-click or Ctrl+V; the key shows as *** while you type.{RESET}\n')
 
     keys = {}
     for provider, env_name, label in [('gemini', 'GEMINI_API_KEY', 'Gemini'), ('openai', 'OPENAI_API_KEY', 'OpenAI')]:
         current = env.get(env_name, '')
-        while True:
-            suffix = f'Enter keeps {mask(current)}, "-" removes it' if current else 'Enter to skip'
-            entered = getpass.getpass(f'{label} API key ({suffix}): ').strip()
-            key = '' if entered == '-' else (entered or current)
-            if not key:
-                print(f'  {DIM}No {label} key.{RESET}')
-                break
-            print(f'  Checking {mask(key)}...', end=' ', flush=True)
-            error = check_key(provider, key)
-            if not error:
-                print(f'{GREEN}works{RESET}')
-                keys[provider] = key
-                break
-            print(f'{RED}{error}{RESET}')
-            if not ask_yes_no('Try another key?'):
-                if ask_yes_no(f'Save this {label} key anyway?', default=False):
-                    keys[provider] = key
-                break
+        if current:
+            print(f'{BOLD}{label}{RESET}: you already have a key ({mask(current)}).')
+            action = choose(f'{label} key', ['Keep it', 'Replace it', 'Remove it'], 0)
+            if action == 0:
+                print(f'  Checking {mask(current)}...', end=' ', flush=True)
+                error = check_key(provider, current)
+                print(f'{GREEN}works{RESET}' if not error else f'{YELLOW}{error}; keeping it anyway{RESET}')
+                keys[provider] = current
+                print()
+                continue
+            if action == 2:
+                print(f'  {DIM}{label} key removed.{RESET}\n')
+                continue
+        key = ask_key(provider, label)
+        if key:
+            keys[provider] = key
+        print()
     if not keys:
         input(f'\n{RED}At least one key is required.{RESET} Press Enter to try again.')
         return step_keys(env)
     return keys
+
+def ask_key(provider, label):
+    """Prompt until a key validates, or the user skips. Returns the key or None."""
+    prefix = KEY_PREFIXES[provider]
+    while True:
+        key = masked_input(f'{label} API key (Enter to skip): ').strip()
+        if not key:
+            print(f'  {DIM}No {label} key.{RESET}')
+            return None
+        if not key.startswith(prefix):
+            print(f'  {YELLOW}{label} keys usually start with "{prefix}"; checking anyway.{RESET}')
+        print(f'  Checking {mask(key)}...', end=' ', flush=True)
+        error = check_key(provider, key)
+        if not error:
+            print(f'{GREEN}works{RESET}')
+            return key
+        print(f'{RED}{error}{RESET}')
+        if choose('What now?', ['Try again', f'Skip {label}'], 0) == 1:
+            return None
 
 def engine_menu(prompt, options, default):
     labels = [f'{name:<26} {price}' for _, _, name, price, _ in options]
@@ -284,6 +381,14 @@ def step_stt(env, keys):
     current = env.get('DEFAULT_STT_ENGINE')
     default = next((i for i, e in enumerate(options) if e[0] == current), 0)
     return engine_menu('Transcription engine', options, default)
+
+def step_style(env):
+    screen('Style')
+    print('What should happen to your words before they are pasted?\n')
+    current = env.get('DEFAULT_STYLE', 'clean')
+    default = next((i for i, s in enumerate(STYLES) if s[0] == current), 0)
+    labels = [label for _, label, _ in STYLES]
+    return STYLES[choose('Output style', labels, default, details=[desc for *_, desc in STYLES])]
 
 def step_tts(env, keys):
     screen('Read aloud')
@@ -311,8 +416,7 @@ def step_voice(env, keys, tts):
         except Exception as e:
             return f'  {RED}Preview failed: {e}{RESET}'
 
-    # Previews play through winsound, which only exists on Windows
-    return voices[choose('Voice', labels, default, on_preview=preview if os.name == 'nt' else None)][0]
+    return voices[choose('Voice', labels, default, on_preview=preview if can_play_audio() else None)][0]
 
 def step_vocabulary(env, stt):
     if stt[1] != 'gemini':
@@ -342,13 +446,10 @@ def step_install():
             warn(f'{label} failed to install: {e}')
 
 def main():
-    if sys.platform != 'win32':
-        warn('Voice Bubble currently runs on Windows only (pasting uses Win32 APIs).')
-        input('Press Enter to continue anyway.')
-
     env = read_env()
     keys = step_keys(env)
     stt = step_stt(env, keys)
+    style = step_style(env)
     tts = step_tts(env, keys)
     voice = step_voice(env, keys, tts)
     vocabulary = step_vocabulary(env, stt)
@@ -357,6 +458,7 @@ def main():
         'GEMINI_API_KEY': keys.get('gemini'),
         'OPENAI_API_KEY': keys.get('openai'),
         'DEFAULT_STT_ENGINE': stt[0],
+        'DEFAULT_STYLE': style[0],
         'DEFAULT_TTS_ENGINE': tts[0],
         'DEFAULT_TTS_VOICE': voice,
         'GEMINI_TRANSCRIBE_VOCABULARY': vocabulary,
@@ -367,7 +469,7 @@ def main():
 
     screen('Finish')
     ok(f'Saved your settings to {ENV_PATH}')
-    print(f'   Dictation:  {stt[2]}')
+    print(f'   Dictation:  {stt[2]}, style {style[1]}')
     print(f'   Read-aloud: {tts[2]}, voice {voice}')
     print(f"{DIM}   You can switch engines and voices anytime in the bubble's settings.{RESET}\n")
 

@@ -34,6 +34,7 @@ client = OpenAI(api_key=api_key) if api_key else None
 DEFAULT_STT_ENGINE = os.getenv('DEFAULT_STT_ENGINE', 'gemini-3.5-transcribe' if gemini_api_key else 'gpt-transcribe')
 DEFAULT_TTS_ENGINE = os.getenv('DEFAULT_TTS_ENGINE', 'gemini' if gemini_api_key else 'openai')
 DEFAULT_TTS_VOICE = os.getenv('DEFAULT_TTS_VOICE', 'Kore' if DEFAULT_TTS_ENGINE == 'gemini' else 'alloy')
+DEFAULT_STYLE = os.getenv('DEFAULT_STYLE', 'clean')  # 'clean' is Smart mode
 
 GEMINI_TEXT_MODEL = os.getenv('GEMINI_TEXT_MODEL', 'gemini-3.5-flash-lite')
 GEMINI_TTS_MODEL = os.getenv('GEMINI_TTS_MODEL', 'gemini-3.8-flash-lite-tts')
@@ -137,7 +138,8 @@ def get_config():
     """Which providers have keys, and the defaults chosen in the setup wizard."""
     return jsonify({
         'providers': {'openai': bool(api_key), 'gemini': bool(gemini_api_key)},
-        'defaults': {'stt_engine': DEFAULT_STT_ENGINE, 'tts_engine': DEFAULT_TTS_ENGINE, 'tts_voice': DEFAULT_TTS_VOICE}
+        'defaults': {'stt_engine': DEFAULT_STT_ENGINE, 'tts_engine': DEFAULT_TTS_ENGINE, 'tts_voice': DEFAULT_TTS_VOICE,
+                     'style': DEFAULT_STYLE}
     })
 
 @app.route('/transcribe', methods=['POST'])

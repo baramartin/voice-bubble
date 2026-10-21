@@ -1,6 +1,22 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, clipboard, screen } = require('electron');
-const { spawn, exec, execFile } = require('child_process');
+const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, clipboard, screen, nativeImage } = require('electron');
+const { spawn, execFile, execFileSync } = require('child_process');
 const path = require('path');
+
+// Windows is the main platform. macOS and Linux are experimental: pasting uses osascript (macOS,
+// needs the Accessibility permission) or xdotool (Linux/X11); without xdotool the text is only copied.
+const IS_WINDOWS = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+const HAS_XDOTOOL = !IS_WINDOWS && !IS_MAC && commandExists('xdotool');
+const PYTHON = IS_WINDOWS ? 'python' : 'python3';
+
+function commandExists(command) {
+  try {
+    execFileSync('which', [command], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 let bubbleWindow;
 let tray;
@@ -14,11 +30,17 @@ Add-Type 'using System; using System.Runtime.InteropServices; public class WinAP
 [WinAPI]::GetForegroundWindow().ToInt64()
 `.trim();
 
+// Remember the window the user was typing in, so we can paste back into it.
+// macOS doesn't need this: the bubble is a non-activating panel, so that app never loses focus.
 function captureTargetWindow() {
+  if (IS_MAC || (!IS_WINDOWS && !HAS_XDOTOOL)) return Promise.resolve(null);
   if (captureInFlight) return Promise.resolve(targetWindowHandle);
   captureInFlight = true;
+  const [command, args] = IS_WINDOWS
+    ? ['powershell', ['-NoProfile', '-Command', PS_GET_HWND]]
+    : ['xdotool', ['getactivewindow']];
   return new Promise((resolve) => {
-    execFile('powershell', ['-NoProfile', '-Command', PS_GET_HWND], (err, stdout) => {
+    execFile(command, args, (err, stdout) => {
       captureInFlight = false;
       if (!err && stdout.trim()) {
         const handle = stdout.trim();
@@ -77,17 +99,39 @@ Add-Type -AssemblyName System.Windows.Forms
   });
 }
 
-async function pasteToTargetWindow() {
-  if (!targetWindowHandle) {
-    console.log('No target window handle, skipping paste');
-    return;
+function runCommand(command, args) {
+  return new Promise((resolve) => {
+    execFile(command, args, (err, stdout, stderr) => {
+      if (err) console.error(`${command} failed:`, err.message, stderr);
+      resolve(!err);
+    });
+  });
+}
+
+// Send Ctrl+<key> (Cmd+<key> on macOS) to the window the user was working in.
+// Returns false when this system can't send keystrokes.
+async function sendShortcutToTarget(key) {
+  if (IS_MAC) {
+    return runCommand('osascript', ['-e', `tell application "System Events" to keystroke "${key}" using command down`]);
   }
-  console.log('Pasting to window handle:', targetWindowHandle);
-  if (await focusTargetAndSendKeys('^v', 100, 200)) console.log('Paste done');
+  if (!targetWindowHandle) return false;
+  if (IS_WINDOWS) {
+    return key === 'v' ? focusTargetAndSendKeys('^v', 100, 200) : focusTargetAndSendKeys('^c', 50, 100);
+  }
+  if (HAS_XDOTOOL) {
+    return runCommand('xdotool', ['windowactivate', '--sync', targetWindowHandle, 'key', '--clearmodifiers', `ctrl+${key}`]);
+  }
+  return false;
+}
+
+async function pasteToTargetWindow() {
+  const pasted = await sendShortcutToTarget('v');
+  console.log(pasted ? 'Paste done' : 'Could not paste; text is on the clipboard');
+  return pasted;
 }
 
 function startFlask() {
-  flaskProcess = spawn('python', ['app.py'], {
+  flaskProcess = spawn(PYTHON, ['app.py'], {
     cwd: __dirname,
     stdio: ['pipe', 'pipe', 'pipe']
   });
@@ -113,6 +157,8 @@ function createBubbleWindow() {
     resizable: false,
     hasShadow: false,
     thickFrame: false,
+    // macOS: a non-activating panel, so clicking the bubble doesn't steal focus from the app you're typing in
+    ...(IS_MAC ? { type: 'panel' } : {}),
     title: '',
     backgroundColor: '#00000000',
     webPreferences: {
@@ -144,8 +190,11 @@ function createBubbleWindow() {
 }
 
 function createTray() {
-  // Use a simple icon - create one from the Electron default
-  tray = new Tray(path.join(__dirname, 'static', 'icon.ico'));
+  // Windows tray icons come from the multi-size .ico; other platforms use the PNG scaled down
+  const icon = IS_WINDOWS
+    ? path.join(__dirname, 'static', 'icon.ico')
+    : nativeImage.createFromPath(path.join(__dirname, 'static', 'icon.png')).resize({ width: IS_MAC ? 18 : 22 });
+  tray = new Tray(icon);
   tray.setToolTip('Voice Bubble');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show Bubble', click: () => bubbleWindow?.show() },
@@ -155,6 +204,7 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
+  if (IS_MAC) app.dock?.hide(); // live in the menu bar only, like skipTaskbar on Windows
   startFlask();
   createBubbleWindow();
 
@@ -169,9 +219,8 @@ app.whenReady().then(() => {
 
   // Global hotkey: Ctrl+Shift+S to speak selection/clipboard aloud (or stop if already speaking)
   globalShortcut.register('Ctrl+Shift+S', async () => {
-    // First, copy selection from the target window (Ctrl+C)
-    if (targetWindowHandle) {
-      await focusTargetAndSendKeys('^c', 50, 100);
+    // First, copy the selection from the target window (Ctrl+C / Cmd+C)
+    if (await sendShortcutToTarget('c')) {
       // Small delay for clipboard to update
       await new Promise(r => setTimeout(r, 100));
     }
@@ -182,10 +231,10 @@ app.whenReady().then(() => {
   // IPC: read clipboard text (for renderer button clicks)
   ipcMain.handle('get-clipboard-text', () => clipboard.readText());
 
-  // IPC: transcription done, paste it
-  ipcMain.on('transcription-complete', (event, text) => {
+  // IPC: transcription done, paste it. Resolves false if the text could only be copied.
+  ipcMain.handle('transcription-complete', (event, text) => {
     clipboard.writeText(text);
-    pasteToTargetWindow();
+    return pasteToTargetWindow();
   });
 
   // IPC: copy only (no paste)

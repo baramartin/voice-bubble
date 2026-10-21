@@ -8,30 +8,34 @@
   A floating bubble for <b>Windows</b> that lets you <b>type anywhere with your voice</b> and <b>have any text read aloud</b>.
 </p>
 
+<p align="center">
+  <sub>🤖 Written by <a href="https://claude.com/claude-code">Claude</a> (Anthropic's AI) in Claude Code, from ideas, direction and testing by <a href="https://github.com/baramartin">Martin Bara</a>.</sub>
+</p>
+
 ---
 
-Press a hotkey, talk, press it again, and the transcript is pasted into whatever window you were using. Pick an output style and your rambling gets cleaned up, turned into bullet points, or rewritten as an email on the way. Select text anywhere and press another hotkey to hear it spoken.
+Press a hotkey, talk, press it again, and the transcript is pasted into whatever window you were using. By default **Smart mode** tidies up what you said on the way: the ums disappear, "Tuesday, no, Wednesday" becomes "Wednesday", and spoken lists become real lists. Other styles turn your words into bullet points or an email. Select text anywhere and press another hotkey to hear it spoken.
 
 It runs on your own API keys (Google Gemini and/or OpenAI), so you pay per minute of audio. A typical dictation costs a fraction of a cent, Gemini has a free tier, and there's no subscription.
 
-> **Platform:** Windows 10/11 only for now. Pasting into other apps and refocusing windows use Win32 APIs.
+> **Platform:** built for and tested on **Windows 10/11**. macOS and Linux support is **experimental and untested**; see [Other platforms](#other-platforms).
 
 ## Features
 
 - **System-wide dictation**: transcribed text is pasted straight into the window you were working in
-- **Choice of transcription engines**
-  - **Gemini 3.5 Transcribe**, whose *smart mode* removes filler words, applies spoken self-corrections ("Tuesday, actually no, Wednesday" → "Wednesday") and formats spoken lists
-  - **OpenAI `gpt-transcribe`** and **`gpt-4o-transcribe`**
-- **Output styles**: raw, no line breaks, clean up, professional email, bullet points, emojify, make concise
+- **Output styles**
+  - **Smart mode** (default): removes filler words and false starts, applies your spoken corrections and formats lists
+  - **Raw**, **No new lines**, **Professional email**, **Bullet points**, **Emojify**, **Make concise**
+- **Choice of transcription engines**: **Gemini 3.5 Transcribe** (Smart mode is built in), **OpenAI `gpt-transcribe`** or **`gpt-4o-transcribe`**
 - **Text-to-speech** with streaming playback, so audio starts before the whole clip is generated
   - **Gemini 3.8 Flash-Lite / Flash TTS** (30 voices) or **OpenAI `gpt-4o-mini-tts`** (13 voices)
   - Speech styles: news anchor, casual, poetry reading, storytelling, calm
 - **Setup wizard** that checks your keys, shows prices and lets you preview voices
-- Microphone picker and live level meter
+- Microphone picker, live level meter, and a Help tab right in the settings
 
 ## Quick start
 
-You need [Python 3.10+](https://www.python.org/downloads/) (on your `PATH` as `python`) and [Node.js 18+](https://nodejs.org/).
+You need [Python 3.10+](https://www.python.org/downloads/) and [Node.js 18+](https://nodejs.org/).
 
 ```bash
 git clone https://github.com/baramartin/voice-bubble.git
@@ -44,10 +48,11 @@ The setup wizard walks you through these steps (arrow keys to move, Enter to sel
 
 1. **API keys**: paste a [Gemini key](https://aistudio.google.com/apikey) and/or an [OpenAI key](https://platform.openai.com/api-keys). Each one is checked on the spot.
 2. **Dictation engine**, with prices
-3. **Read-aloud engine**, with prices
-4. **Voice**: press `P` to hear the highlighted voice before you pick it
-5. **Custom vocabulary** (Gemini only): names or jargon it should recognize
-6. **Installing dependencies** (`pip` + `npm`)
+3. **Output style**: Smart mode is recommended
+4. **Read-aloud engine**, with prices
+5. **Voice**: press `P` to hear the highlighted voice before you pick it
+6. **Custom vocabulary** (Gemini only): names or jargon it should recognize
+7. **Installing dependencies** (`pip` + `npm`)
 
 It writes a `.env` file. Run it again anytime to change your choices; your current values are kept as defaults.
 
@@ -58,9 +63,7 @@ It writes a `.env` file. Run it again anytime to change your choices; your curre
 | Start / stop dictation | `Ctrl+Shift+Space` or click the mic |
 | Read selected text aloud | `Ctrl+Shift+S` (copies the selection, then speaks it; press again to stop) |
 | Read the clipboard aloud | Click the speaker button |
-| Change engine, style, mic or voice | Click the settings button on the bubble (the Help tab lists all of this too) |
-
-Tip: choose **Clean up** with **Gemini 3.5 Transcribe** to get smart mode. It cleans up in a single call instead of transcribing first and rewriting afterwards.
+| Change style, engine, mic or voice | Click the settings button on the bubble (the Help tab lists all of this too) |
 
 ## Pricing
 
@@ -75,7 +78,7 @@ Approximate paid-tier prices as of October 2026. Check [Gemini](https://ai.googl
 | Gemini 3.8 Flash TTS | ~$0.0135 / min |
 | OpenAI gpt-4o-mini-tts | ~$0.015 / min |
 
-Gemini TTS prices double on January 1, 2027.
+Gemini TTS prices double on January 1, 2027. Styles other than Smart mode and Raw make one extra, very cheap text-model call.
 
 ## Configuration
 
@@ -86,12 +89,22 @@ The wizard handles this, but you can also edit `.env` by hand (see [`.env.exampl
 | `GEMINI_API_KEY` | (none) | Gemini engines |
 | `OPENAI_API_KEY` | (none) | OpenAI engines |
 | `DEFAULT_STT_ENGINE` | Gemini if you have the key | Dictation engine the bubble starts with |
+| `DEFAULT_STYLE` | `clean` (Smart mode) | Output style the bubble starts with |
 | `DEFAULT_TTS_ENGINE` / `DEFAULT_TTS_VOICE` | Gemini / `Kore` | Read-aloud engine and voice the bubble starts with |
 | `GEMINI_TTS_MODEL` | `gemini-3.8-flash-lite-tts` | Or `gemini-3.8-flash-tts` |
 | `GEMINI_TRANSCRIBE_VOCABULARY` | (none) | Comma-separated names or jargon, e.g. `Kubernetes, BigQuery` |
 | `GEMINI_TEXT_MODEL` | `gemini-3.5-flash-lite` | Output styles when you have no OpenAI key |
 
 Choices you make in the bubble's settings are remembered and take precedence over these defaults.
+
+## Other platforms
+
+Everything except pasting into other apps is cross-platform. Pasting works like this:
+
+- **macOS (experimental):** the bubble is a floating panel that doesn't take focus, and pasting sends ⌘V through `osascript`. macOS will ask you to allow **Accessibility** access (System Settings → Privacy & Security → Accessibility) for the app or terminal you start Voice Bubble from.
+- **Linux (experimental):** on X11, install `xdotool` for automatic pasting. Without it (for example on Wayland), the text is copied and the bubble shows *Copied, paste it*.
+
+The hotkeys stay `Ctrl+Shift+Space` and `Ctrl+Shift+S` on every platform. If you try it on a Mac or Linux, issues and fixes are very welcome.
 
 ## How it works
 
@@ -108,6 +121,14 @@ Choices you make in the bubble's settings are remembered and take precedence ove
 ## Privacy
 
 Audio and text are sent to Google and/or OpenAI for processing, depending on the engines you pick. On Gemini's free tier, Google may use that data to improve its products. Nothing is stored locally beyond your settings.
+
+## Credits
+
+Voice Bubble was written by **Claude**, Anthropic's AI model, working in [Claude Code](https://claude.com/claude-code). **Martin Bara** came up with the idea, decided what it should do, and tested every step.
+
+## Disclaimer
+
+Voice Bubble is a hobby project provided **as is**, without warranty of any kind (see the [license](LICENSE)). You are responsible for your own API keys and for any costs your usage incurs with Google or OpenAI. Double-check dictated text before sending it anywhere important; speech recognition and the AI styles can make mistakes.
 
 ## License
 

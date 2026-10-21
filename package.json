@@ -5,10 +5,10 @@
   "main": "main.js",
   "license": "MIT",
   "scripts": {
-    "setup": "python setup_wizard.py",
+    "setup": "node scripts/python.js setup_wizard.py",
     "start": "electron .",
-    "flask": "python app.py",
-    "icon": "python scripts/make_icon.py"
+    "flask": "node scripts/python.js app.py",
+    "icon": "node scripts/python.js scripts/make_icon.py"
   },
   "dependencies": {
     "electron": "^35.0.0"
