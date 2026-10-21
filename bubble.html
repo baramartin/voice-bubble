@@ -534,6 +534,7 @@ let audioSource = null;
 let levelInterval = null;
 let selectedDeviceId = localStorage.getItem('selectedMicId') || null;
 let selectedStyle = localStorage.getItem('selectedStyle') || 'clean';
+let addTrailingSpace = localStorage.getItem('addTrailingSpace') !== 'false'; // on by default
 let selectedSttEngine = localStorage.getItem('selectedSttEngine') || 'gemini-3.5-transcribe';
 let providers = { openai: true, gemini: true }; // replaced by /config on startup
 let pickerOpen = false;
@@ -789,6 +790,10 @@ async function renderDictationTab(body) {
     body.appendChild(makeOption(engine.label, engine.id === selectedSttEngine, () => selectSttEngine(engine.id)));
   });
 
+  addSection(body, 'Pasting');
+  body.appendChild(makeOption('Add a space after the text', addTrailingSpace, toggleTrailingSpace,
+    'So your next dictation doesn\'t start right after the period. Only for single-line text.'));
+
   addSection(body, 'Microphone');
   const mics = await enumerateMics();
   if (mics.length === 0) {
@@ -878,6 +883,12 @@ async function renderSettingsPanel() {
 function selectSettingsTab(tabId) {
   settingsTab = tabId;
   localStorage.setItem('settingsTab', tabId);
+  renderSettingsPanel();
+}
+
+function toggleTrailingSpace() {
+  addTrailingSpace = !addTrailingSpace;
+  localStorage.setItem('addTrailingSpace', String(addTrailingSpace));
   renderSettingsPanel();
 }
 
@@ -1124,7 +1135,10 @@ async function transcribe(blob) {
       }
     }
 
-    const pasted = await window.electronAPI.transcriptionComplete(finalText);
+    // A trailing space lets the next dictation continue the same line naturally.
+    // Multi-line results (emails, lists) are left alone.
+    const toPaste = addTrailingSpace && !finalText.includes('\n') ? finalText.trimEnd() + ' ' : finalText;
+    const pasted = await window.electronAPI.transcriptionComplete(toPaste);
     setState('success', pasted ? truncate(finalText, 25) : 'Copied, paste it');
   } catch (err) {
     console.error('Transcription error:', err);
