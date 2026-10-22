@@ -72,8 +72,8 @@ It writes a `.env` file. Run it again anytime to change your choices; your curre
 
 | Action | How |
 |---|---|
-| Start / stop dictation | `Ctrl+Shift+Space` or click the mic |
-| Read selected text aloud | `Ctrl+Alt+Shift+Space` (the same plus Alt). Press again to stop. Your clipboard is left as it was |
+| Start / stop dictation | `Ctrl+Shift+Space` (Mac: `Cmd+Shift+Space`) or click the mic |
+| Read selected text aloud | `Ctrl+Alt+Shift+Space` (Mac: `Cmd+Option+Shift+Space`), the same plus Alt. Press again to stop. Your clipboard is left as it was |
 | Read the clipboard aloud | Click the speaker button |
 | Change style, engine, mic or voice | Click the settings button on the bubble (the Help tab lists all of this too) |
 | Hear a voice | Click it in Settings → Read aloud |
@@ -109,8 +109,8 @@ The wizard handles this, but you can also edit `.env` by hand (see [`.env.exampl
 | `GEMINI_TTS_MODEL` | `gemini-3.8-flash-lite-tts` | Or `gemini-3.8-flash-tts` |
 | `GEMINI_TRANSCRIBE_VOCABULARY` | (none) | Comma-separated names or jargon, e.g. `Kubernetes, BigQuery` |
 | `GEMINI_TEXT_MODEL` | `gemini-3.5-flash-lite` | Output styles when you have no OpenAI key |
-| `HOTKEY_DICTATE` | `Ctrl+Shift+Space` | Global dictation hotkey ([Electron accelerator](https://www.electronjs.org/docs/latest/api/accelerator) format) |
-| `HOTKEY_READ_ALOUD` | `Ctrl+Alt+Shift+Space` | Global read-aloud hotkey |
+| `HOTKEY_DICTATE` | `CommandOrControl+Shift+Space` | Global dictation hotkey ([Electron accelerator](https://www.electronjs.org/docs/latest/api/accelerator) format; `CommandOrControl` is Cmd on a Mac, Ctrl elsewhere) |
+| `HOTKEY_READ_ALOUD` | `CommandOrControl+Alt+Shift+Space` | Global read-aloud hotkey |
 
 Choices you make in the bubble's settings are remembered and take precedence over these defaults.
 
@@ -118,10 +118,10 @@ Choices you make in the bubble's settings are remembered and take precedence ove
 
 Everything except pasting into other apps is cross-platform. Pasting works like this:
 
-- **macOS (experimental):** the bubble is a floating panel that doesn't take focus, and pasting sends ⌘V through `osascript`. macOS will ask you to allow **Accessibility** access (System Settings → Privacy & Security → Accessibility) for the app or terminal you start Voice Bubble from.
+- **macOS (experimental):** the bubble is a floating panel that doesn't take focus, and pasting sends ⌘V through `osascript`. On first start, macOS asks you to allow **Accessibility** access (System Settings → Privacy & Security → Accessibility) for the terminal you start Voice Bubble from; until you do, the text is only copied. Restart Voice Bubble after allowing it.
 - **Linux (experimental):** on X11, install `xdotool` for automatic pasting. Without it (for example on Wayland), the text is copied and the bubble shows *Copied, paste it*.
 
-The hotkeys are the same on every platform (`Ctrl` is the Control key on a Mac, `Alt` is Option). If you try it on a Mac or Linux, issues and fixes are very welcome.
+On a Mac the hotkeys use `Cmd` instead of `Ctrl` (and `Option` for `Alt`). If you try it on a Mac or Linux, issues and fixes are very welcome.
 
 ## How it works
 

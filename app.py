@@ -8,7 +8,6 @@ from werkzeug.serving import make_server
 import time
 import signal
 import sys
-import atexit
 import base64
 import json
 import urllib.request
@@ -16,8 +15,6 @@ import urllib.error
 
 load_dotenv()
 
-# Global server variable that can be accessed by signal handlers
-server = None
 app = Flask(__name__)
 
 # At least one provider is needed; either one alone is enough. Run `npm run setup` to create .env.
@@ -375,58 +372,32 @@ def text_to_speech():
             'success': False
         }), 500
 
-# Multiple exit strategies to ensure clean shutdown
-def force_exit():
-    """Force exit the application after 1 second if clean shutdown fails"""
-    print("Force exiting application...")
-    time.sleep(1)
+def stop_on_signal(signal_received, frame):
+    """Ctrl+C or the bubble closing: break out of serve_forever right away, which frees the port"""
+    raise KeyboardInterrupt
+
+def exit_when_parent_closes():
+    """When started by the bubble, stdin is a pipe from it. EOF means the bubble is gone
+    (even if it crashed), so don't stay behind holding the port."""
+    sys.stdin.read()
     os._exit(0)
 
-def shutdown_server_handler(signal_received, frame):
-    """Signal handler for graceful shutdown"""
-    global server
-    print(f"\nSignal {signal_received} received. Shutting down server...")
-    
-    # Set a timer for force exit in case graceful shutdown hangs
-    force_exit_timer = threading.Timer(3.0, force_exit)
-    force_exit_timer.daemon = True
-    force_exit_timer.start()
-    
-    try:
-        if server:
-            print("Stopping server...")
-            server.shutdown()
-    except Exception as e:
-        print(f"Error during shutdown: {e}")
-        sys.exit(1)
-    
-    # Exit the process
-    sys.exit(0)
-
-def cleanup_on_exit():
-    """Atexit handler for any final cleanup"""
-    print("Cleaning up resources...")
-
 if __name__ == '__main__':
-    # Register cleanup function
-    atexit.register(cleanup_on_exit)
-
-    # Register signal handlers for various termination signals
-    signal.signal(signal.SIGINT, shutdown_server_handler)   # Ctrl+C
-    signal.signal(signal.SIGTERM, shutdown_server_handler)  # Termination signal
+    signal.signal(signal.SIGINT, stop_on_signal)
+    signal.signal(signal.SIGTERM, stop_on_signal)
     if hasattr(signal, 'SIGBREAK'):  # Windows Ctrl+Break
-        signal.signal(signal.SIGBREAK, shutdown_server_handler)
+        signal.signal(signal.SIGBREAK, stop_on_signal)
+    if not sys.stdin.isatty():
+        threading.Thread(target=exit_when_parent_closes, daemon=True).start()
 
     print("Starting dictation API server on http://127.0.0.1:27315 ...")
     print("Press Ctrl+C to stop the server")
-    
-    # Create server that we can shutdown gracefully
+
     # threaded so a long-running TTS stream doesn't block other requests
     server = make_server('127.0.0.1', 27315, app, threaded=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        # Directly call sys.exit() if KeyboardInterrupt is caught here
-        # This ensures we exit even if the signal handler is bypassed
-        print("\nKeyboardInterrupt caught. Exiting...")
-        sys.exit(0)
+        pass
+    finally:
+        server.server_close()

@@ -66,11 +66,13 @@ STYLES = [
 KEY_PREFIXES = {'gemini': 'AIza', 'openai': 'sk-'}
 
 # Global hotkeys, in Electron accelerator format. Keep defaults in sync with main.js.
+# CommandOrControl is Cmd on a Mac and Ctrl elsewhere.
 # Read aloud is the dictation hotkey plus Alt: hardly any app uses it, on any OS.
 DEFAULT_HOTKEYS = {
-    'HOTKEY_DICTATE': 'Ctrl+Shift+Space',
-    'HOTKEY_READ_ALOUD': 'Ctrl+Alt+Shift+Space',
+    'HOTKEY_DICTATE': 'CommandOrControl+Shift+Space',
+    'HOTKEY_READ_ALOUD': 'CommandOrControl+Alt+Shift+Space',
 }
+IS_MAC = sys.platform == 'darwin'
 HOTKEY_MODIFIERS = {'ctrl', 'control', 'alt', 'option', 'shift', 'cmd', 'command', 'cmdorctrl',
                     'commandorcontrol', 'super', 'meta', 'altgr'}
 # Combinations that other apps commonly use, worth a warning
@@ -462,9 +464,16 @@ def hotkey_problem(hotkey):
         return 'it needs at least one of Ctrl, Alt or Shift, so it does not fire while you type'
     return None
 
+def hotkey_label(hotkey):
+    """How a hotkey reads on this OS: CommandOrControl+Alt+R is Cmd+Option+R on a Mac, Ctrl+Alt+R elsewhere"""
+    names = {'commandorcontrol': 'Cmd' if IS_MAC else 'Ctrl', 'cmdorctrl': 'Cmd' if IS_MAC else 'Ctrl'}
+    if IS_MAC:
+        names.update({'command': 'Cmd', 'alt': 'Option'})
+    return '+'.join(names.get(part.lower(), part) for part in hotkey.split('+'))
+
 def ask_hotkey(label, current):
     while True:
-        entered = input(f'{label} (Enter keeps {current}): ').strip()
+        entered = input(f'{label} (Enter keeps {hotkey_label(current)}): ').strip()
         if not entered:
             return current
         # Normalize "ctrl + alt + space" to "Ctrl+Alt+Space" (Electron's accelerator format)
@@ -482,12 +491,14 @@ def step_hotkeys(env):
     screen('Hotkeys')
     current = {name: env.get(name) or default for name, default in DEFAULT_HOTKEYS.items()}
     print('These work in every app, so they should be combinations other apps don\'t use.\n')
-    print(f'  Dictate:     {BOLD}{current["HOTKEY_DICTATE"]}{RESET}')
-    print(f'  Read aloud:  {BOLD}{current["HOTKEY_READ_ALOUD"]}{RESET}\n')
+    print(f'  Dictate:     {BOLD}{hotkey_label(current["HOTKEY_DICTATE"])}{RESET}')
+    print(f'  Read aloud:  {BOLD}{hotkey_label(current["HOTKEY_READ_ALOUD"])}{RESET}\n')
     if choose('Hotkeys', ['Keep these', 'Change them'], 0) == 0:
         return current
-    print(f'\n{DIM}Write them like Ctrl+Alt+R or Ctrl+Shift+F9. Modifiers: Ctrl, Alt, Shift'
-          f'{", Cmd" if sys.platform == "darwin" else ""}.{RESET}')
+    if IS_MAC:
+        print(f'\n{DIM}Write them like Cmd+Option+R or Cmd+Shift+F9. Modifiers: Cmd, Ctrl, Option, Shift.{RESET}')
+    else:
+        print(f'\n{DIM}Write them like Ctrl+Alt+R or Ctrl+Shift+F9. Modifiers: Ctrl, Alt, Shift.{RESET}')
     while True:
         dictate = ask_hotkey('Dictate', current['HOTKEY_DICTATE'])
         read_aloud = ask_hotkey('Read aloud', current['HOTKEY_READ_ALOUD'])
@@ -571,7 +582,8 @@ def main():
     hotkeys = step_hotkeys(env)
 
     updates = {
-        **hotkeys,
+        # Defaults are left out of .env, so they keep following the OS (Cmd on a Mac, Ctrl elsewhere)
+        **{name: None if value == DEFAULT_HOTKEYS[name] else value for name, value in hotkeys.items()},
         'GEMINI_API_KEY': keys.get('gemini'),
         'OPENAI_API_KEY': keys.get('openai'),
         'DEFAULT_STT_ENGINE': stt[0],
@@ -588,7 +600,8 @@ def main():
     ok(f'Saved your settings to {ENV_PATH}')
     print(f'   Dictation:  {stt[2]}, style {style[1]}')
     print(f'   Read-aloud: {tts[2]}, voice {voice}')
-    print(f'   Hotkeys:    {hotkeys["HOTKEY_DICTATE"]} to dictate, {hotkeys["HOTKEY_READ_ALOUD"]} to read aloud')
+    print(f'   Hotkeys:    {hotkey_label(hotkeys["HOTKEY_DICTATE"])} to dictate, '
+          f'{hotkey_label(hotkeys["HOTKEY_READ_ALOUD"])} to read aloud')
     print(f"{DIM}   You can switch engines and voices anytime in the bubble's settings.{RESET}\n")
 
     step_install()

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, clipboard, screen, nativeImage } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, clipboard, screen, nativeImage, systemPreferences } = require('electron');
 const { spawn, execFile, execFileSync } = require('child_process');
 const path = require('path');
 
@@ -10,12 +10,20 @@ const HAS_XDOTOOL = !IS_WINDOWS && !IS_MAC && commandExists('xdotool');
 const PYTHON = IS_WINDOWS ? 'python' : 'python3';
 
 // Hotkeys come from .env (HOTKEY_DICTATE / HOTKEY_READ_ALOUD, set by the setup wizard).
+// CommandOrControl is Cmd on a Mac and Ctrl elsewhere.
 // Read aloud defaults to the dictation hotkey plus Alt: hardly any app uses it, on any OS.
 const env = readEnvFile(path.join(__dirname, '.env'));
 const HOTKEYS = {
-  dictate: env.HOTKEY_DICTATE || 'Ctrl+Shift+Space',
-  readAloud: env.HOTKEY_READ_ALOUD || 'Ctrl+Alt+Shift+Space'
+  dictate: env.HOTKEY_DICTATE || 'CommandOrControl+Shift+Space',
+  readAloud: env.HOTKEY_READ_ALOUD || 'CommandOrControl+Alt+Shift+Space'
 };
+
+// How a hotkey reads on this OS: CommandOrControl+Alt+R is Cmd+Option+R on a Mac, Ctrl+Alt+R elsewhere
+function hotkeyLabel(accelerator) {
+  const names = { commandorcontrol: IS_MAC ? 'Cmd' : 'Ctrl', cmdorctrl: IS_MAC ? 'Cmd' : 'Ctrl' };
+  if (IS_MAC) Object.assign(names, { command: 'Cmd', alt: 'Option' });
+  return accelerator.split('+').map(key => names[key.toLowerCase()] || key).join('+');
+}
 
 function readEnvFile(file) {
   const values = {};
@@ -299,21 +307,28 @@ function registerHotkey(accelerator, handler) {
 }
 
 app.whenReady().then(() => {
-  if (IS_MAC) app.dock?.hide(); // live in the menu bar only, like skipTaskbar on Windows
+  if (IS_MAC) {
+    app.dock?.hide(); // live in the menu bar only, like skipTaskbar on Windows
+    // Pasting sends Cmd+V through System Events, which needs Accessibility access.
+    // Passing true makes macOS show its "allow" prompt if it's missing.
+    if (!systemPreferences.isTrustedAccessibilityClient(true)) {
+      console.log('Pasting needs Accessibility access: System Settings > Privacy & Security > Accessibility');
+    }
+  }
   startFlask();
   createBubbleWindow();
 
   // Try to create tray (won't crash if icon missing)
   try { createTray(); } catch (e) { console.log('Tray icon not found, skipping tray'); }
 
-  // Global hotkey to toggle recording (Ctrl+Shift+Space by default)
+  // Global hotkey to toggle recording (Ctrl+Shift+Space by default, Cmd+Shift+Space on a Mac)
   registerHotkey(HOTKEYS.dictate, async () => {
     await captureTargetWindow();
     bubbleWindow.webContents.send('toggle-recording');
   });
 
   // Global hotkey to read the selection aloud, or the clipboard if nothing is selected
-  // (Ctrl+Alt+Shift+Space by default). Pressing it while speaking stops.
+  // (Ctrl+Alt+Shift+Space by default, Cmd+Option+Shift+Space on a Mac). Pressing it while speaking stops.
   registerHotkey(HOTKEYS.readAloud, async () => {
     // Copy the selection from the target window (Ctrl+C / Cmd+C), then put the user's clipboard back
     const before = clipboard.readText();
@@ -325,7 +340,11 @@ app.whenReady().then(() => {
   });
 
   // IPC: the configured hotkeys, and any another app already owns, for the bubble's UI
-  ipcMain.handle('get-hotkeys', () => ({ ...HOTKEYS, failed: failedHotkeys }));
+  ipcMain.handle('get-hotkeys', () => ({
+    dictate: hotkeyLabel(HOTKEYS.dictate),
+    readAloud: hotkeyLabel(HOTKEYS.readAloud),
+    failed: failedHotkeys.map(hotkeyLabel)
+  }));
 
   // IPC: read clipboard text (for renderer button clicks)
   ipcMain.handle('get-clipboard-text', () => clipboard.readText());
