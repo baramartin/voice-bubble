@@ -503,7 +503,8 @@ def step_install():
     for command, label in commands:
         print(f'{DIM}> {" ".join(command)}{RESET}')
         try:
-            subprocess.run(command, cwd=ROOT, check=True, shell=(command[0] == 'npm'))
+            # npm is a .cmd script on Windows, so it needs the shell there; elsewhere a list with shell=True would run bare `npm`
+            subprocess.run(command, cwd=ROOT, check=True, shell=(os.name == 'nt' and command[0] == 'npm'))
             ok(f'{label} installed')
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             warn(f'{label} failed to install: {e}')

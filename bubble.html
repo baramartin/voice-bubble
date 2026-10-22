@@ -509,7 +509,8 @@
 </div>
 
 <script>
-const FLASK_URL = 'http://localhost:5000';
+// 127.0.0.1, not localhost (which can resolve to IPv6), and not port 5000, which macOS's AirPlay Receiver owns
+const FLASK_URL = 'http://127.0.0.1:27315';
 
 const micBtn = document.getElementById('mic-btn');
 const settingsBtn = document.getElementById('settings-btn');

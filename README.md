@@ -127,7 +127,7 @@ The hotkeys are the same on every platform (`Ctrl` is the Control key on a Mac, 
 
 - `main.js` (Electron) is the floating bubble window, the global hotkeys, and pasting into the target window
 - `bubble.html` is the bubble UI: recording, settings, and streaming audio playback
-- `app.py` (Flask) is a local backend on `localhost:5000` that keeps your API keys out of the UI and calls Gemini / OpenAI
+- `app.py` (Flask) is a local backend on `127.0.0.1:27315` that keeps your API keys out of the UI and calls Gemini / OpenAI
   - `POST /transcribe` turns audio into text
   - `POST /transform` restyles text (GPT-4o, or Gemini without an OpenAI key)
   - `POST /tts` turns text into speech (Gemini streams raw PCM)

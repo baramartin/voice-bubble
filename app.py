@@ -417,12 +417,12 @@ if __name__ == '__main__':
     if hasattr(signal, 'SIGBREAK'):  # Windows Ctrl+Break
         signal.signal(signal.SIGBREAK, shutdown_server_handler)
 
-    print("Starting dictation API server on http://localhost:5000 ...")
+    print("Starting dictation API server on http://127.0.0.1:27315 ...")
     print("Press Ctrl+C to stop the server")
     
     # Create server that we can shutdown gracefully
     # threaded so a long-running TTS stream doesn't block other requests
-    server = make_server('localhost', 5000, app, threaded=True)
+    server = make_server('127.0.0.1', 27315, app, threaded=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

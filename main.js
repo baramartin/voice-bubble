@@ -203,7 +203,7 @@ async function pasteToTargetWindow() {
 }
 
 function startFlask() {
-  flaskProcess = spawn(PYTHON, ['app.py'], {
+  flaskProcess = spawn(PYTHON, ['-u', 'app.py'], { // -u: unbuffered, so its log shows up live
     cwd: __dirname,
     windowsHide: true, // no console window when started from a desktop shortcut
     stdio: ['pipe', 'pipe', 'pipe']
